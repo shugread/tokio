@@ -86,7 +86,7 @@ pub(crate) mod sys {
     pub(crate) fn num_cpus() -> usize {
         use std::num::NonZeroUsize;
 
-        const ENV_WORKER_THREADS: &str = "TOKIO_WORKER_THREADS";
+        const ENV_WORKER_THREADS: &str = "TOKIO_WORKER_THREADS"; // 通过环境变量修改工作线程数量
 
         match std::env::var(ENV_WORKER_THREADS) {
             Ok(s) => {
@@ -100,7 +100,7 @@ pub(crate) mod sys {
                 n
             }
             Err(std::env::VarError::NotPresent) => {
-                std::thread::available_parallelism().map_or(1, NonZeroUsize::get)
+                std::thread::available_parallelism().map_or(1, NonZeroUsize::get) // 获取cpu的核心数, 获取不到使用默认值1
             }
             Err(std::env::VarError::NotUnicode(e)) => {
                 panic!(
