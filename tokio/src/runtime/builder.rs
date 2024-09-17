@@ -44,13 +44,17 @@ use std::time::Duration;
 /// ```
 pub struct Builder {
     /// Runtime type
+    /// 配置运行时是单线程还是多线程
     kind: Kind,
 
     /// Whether or not to enable the I/O driver
+    /// 支持io, 底层使用mio
     enable_io: bool,
+    /// mio的event数量
     nevents: usize,
 
     /// Whether or not to enable the time driver
+    /// 支持时间驱动
     enable_time: bool,
 
     /// Whether or not the clock should start paused.
@@ -59,18 +63,21 @@ pub struct Builder {
     /// The number of worker threads, used by Runtime.
     ///
     /// Only used when not using the current-thread executor.
+    /// 工作线程数量, 仅在多线程运行时可用
     worker_threads: Option<usize>,
 
     /// Cap on thread usage.
     max_blocking_threads: usize,
 
     /// Name fn used for threads spawned by the runtime.
+    /// 生成线程名称的函数
     pub(super) thread_name: ThreadNameFn,
 
     /// Stack size used for threads spawned by the runtime.
     pub(super) thread_stack_size: Option<usize>,
 
     /// Callback to run after each thread starts.
+    ///
     pub(super) after_start: Option<Callback>,
 
     /// To run before each worker thread stops
@@ -1194,6 +1201,7 @@ impl Builder {
         use crate::runtime::scheduler::{self, CurrentThread};
         use crate::runtime::{runtime::Scheduler, Config};
 
+        // 当前线程运行时, 工作线程数量为1
         let (driver, driver_handle) = driver::Driver::new(self.get_cfg(1))?;
 
         // Blocking pool
@@ -1349,9 +1357,11 @@ cfg_rt_multi_thread! {
 
             let core_threads = self.worker_threads.unwrap_or_else(num_cpus); // 线程数量
 
+            // 创建io, 信号, 时钟driver
             let (driver, driver_handle) = driver::Driver::new(self.get_cfg(core_threads))?;
 
             // Create the blocking pool
+            // 阻塞池
             let blocking_pool =
                 blocking::create_blocking_pool(self, self.max_blocking_threads + core_threads);
             let blocking_spawner = blocking_pool.spawner().clone();
@@ -1385,6 +1395,7 @@ cfg_rt_multi_thread! {
             let handle = Handle { inner: scheduler::Handle::MultiThread(handle) };
 
             // Spawn the thread pool workers
+            // 设置当前的线程Handle, 在退出时, 恢复Handle
             let _enter = handle.enter();
             launch.launch();
 

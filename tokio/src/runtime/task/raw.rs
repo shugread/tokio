@@ -6,6 +6,7 @@ use std::ptr::NonNull;
 use std::task::{Poll, Waker};
 
 /// Raw task handle
+/// 原始任务句柄
 #[derive(Clone)]
 pub(crate) struct RawTask {
     ptr: NonNull<Header>,
@@ -13,37 +14,48 @@ pub(crate) struct RawTask {
 
 pub(super) struct Vtable {
     /// Polls the future.
+    /// 推动future
     pub(super) poll: unsafe fn(NonNull<Header>),
 
     /// Schedules the task for execution on the runtime.
+    /// 调度任务在运行时中执行
     pub(super) schedule: unsafe fn(NonNull<Header>),
 
     /// Deallocates the memory.
+    /// 释放内存
     pub(super) dealloc: unsafe fn(NonNull<Header>),
 
     /// Reads the task output, if complete.
+    /// 如果任务完成, 读取任务输出
     pub(super) try_read_output: unsafe fn(NonNull<Header>, *mut (), &Waker),
 
     /// The join handle has been dropped.
+    /// 连接句柄已被删除.
     pub(super) drop_join_handle_slow: unsafe fn(NonNull<Header>),
 
     /// An abort handle has been dropped.
+    /// 中止句柄已被删除.
     pub(super) drop_abort_handle: unsafe fn(NonNull<Header>),
 
     /// Scheduler is being shutdown.
+    /// 调度程序正在关闭
     pub(super) shutdown: unsafe fn(NonNull<Header>),
 
     /// The number of bytes that the `trailer` field is offset from the header.
+    /// "trailer"字段相对于标题的偏移字节数.
     pub(super) trailer_offset: usize,
 
     /// The number of bytes that the `scheduler` field is offset from the header.
+    /// "scheduler"字段相对于标题的偏移字节数.
     pub(super) scheduler_offset: usize,
 
     /// The number of bytes that the `id` field is offset from the header.
+    /// "id"字段相对于标题的偏移字节数.
     pub(super) id_offset: usize,
 }
 
 /// Get the vtable for the requested `T` and `S` generics.
+/// 根据"T"和"S"泛型生成vtable.
 pub(super) fn vtable<T: Future, S: Schedule>() -> &'static Vtable {
     &Vtable {
         poll: poll::<T, S>,
@@ -64,6 +76,7 @@ pub(super) fn vtable<T: Future, S: Schedule>() -> &'static Vtable {
 ///
 /// See this thread for more info:
 /// <https://users.rust-lang.org/t/custom-vtables-with-integers/78508>
+/// 直接在 vtable 中调用 `get_trailer_offset` 不起作用,因为它阻止 vtable 被提升为静态引用.
 struct OffsetHelper<T, S>(T, S);
 impl<T: Future, S: Schedule> OffsetHelper<T, S> {
     // Pass `size_of`/`align_of` as arguments rather than calling them directly
@@ -181,6 +194,7 @@ impl RawTask {
     }
 
     /// Returns a reference to the task's header.
+    /// 返回对任务头的引用
     pub(super) fn header(&self) -> &Header {
         unsafe { self.ptr.as_ref() }
     }
@@ -191,11 +205,13 @@ impl RawTask {
     }
 
     /// Returns a reference to the task's state.
+    /// 返回对任务状态的引用.
     pub(super) fn state(&self) -> &State {
         &self.header().state
     }
 
     /// Safety: mutual exclusion is required to call this function.
+    /// 安全性: 调用此函数需要互斥.
     pub(crate) fn poll(self) {
         let vtable = self.header().vtable;
         unsafe { (vtable.poll)(self.ptr) }
@@ -238,6 +254,8 @@ impl RawTask {
     /// Increment the task's reference count.
     ///
     /// Currently, this is used only when creating an `AbortHandle`.
+    /// 增加任务的引用计数.
+    /// 目前, 这仅在创建"AbortHandle"时使用.
     pub(super) fn ref_inc(self) {
         self.header().state.ref_inc();
     }
@@ -247,6 +265,8 @@ impl RawTask {
     /// This is for usage by the injection queue
     ///
     /// Safety: make sure only one queue uses this and access is synchronized.
+    /// 获取队列下一个指针
+    /// 这是供注入队列使用的
     pub(crate) unsafe fn get_queue_next(self) -> Option<RawTask> {
         self.header()
             .queue_next
@@ -259,6 +279,8 @@ impl RawTask {
     /// This is for usage by the injection queue
     ///
     /// Safety: make sure only one queue uses this and access is synchronized.
+    /// 设置队列下一个指针
+    /// 这是供注入队列使用的
     pub(crate) unsafe fn set_queue_next(self, val: Option<RawTask>) {
         self.header().set_next(val.map(|task| task.ptr));
     }

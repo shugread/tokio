@@ -249,15 +249,16 @@ pub(super) fn create(
     config: Config,
 ) -> (Arc<Handle>, Launch) {
     let mut cores = Vec::with_capacity(size);
-    let mut remotes = Vec::with_capacity(size);
+    let mut remotes = Vec::with_capacity(size); // 包含所有Worker的任务
     let mut worker_metrics = Vec::with_capacity(size);
 
     // Create the local queues
     for _ in 0..size {
+        // 任务队列
         let (steal, run_queue) = queue::local();
 
         let park = park.clone();
-        let unpark = park.unpark();
+        let unpark = park.unpark(); // 挂起恢复结构
         let metrics = WorkerMetrics::from_config(&config);
         let stats = Stats::new(&metrics);
 
@@ -309,6 +310,7 @@ pub(super) fn create(
         seed_generator,
     });
 
+    // Worker启动器
     let mut launch = Launch(vec![]);
 
     for (index, core) in cores.drain(..).enumerate() {
@@ -462,13 +464,16 @@ where
 
 impl Launch {
     pub(crate) fn launch(mut self) {
+        // 开启worker
         for worker in self.0.drain(..) {
             runtime::spawn_blocking(move || run(worker));
         }
     }
 }
 
+/// 开启线程并运行开启worker
 fn run(worker: Arc<Worker>) {
+    /// 捕获panic
     #[allow(dead_code)]
     struct AbortOnPanic;
 
@@ -505,6 +510,7 @@ fn run(worker: Arc<Worker>) {
             defer: Defer::new(),
         });
 
+        // 设置当前线程的调度器为cx, 并且只在f运行期间有效
         context::set_scheduler(&cx, || {
             let cx = cx.expect_multi_thread();
 
@@ -530,6 +536,7 @@ impl Context {
         // will be one of the first things we do.
         core.stats.start_processing_scheduled_tasks();
 
+        // 没有停止时, 一直在循环
         while !core.is_shutdown {
             self.assert_lifo_enabled_is_correct(&core);
 
@@ -538,12 +545,14 @@ impl Context {
             }
 
             // Increment the tick
+            // tick加1
             core.tick();
 
             // Run maintenance, if needed
             core = self.maintenance(core);
 
             // First, check work available to the current worker.
+            // 获取当前worker的任务
             if let Some(task) = core.next_task(&self.worker) {
                 core = self.run_task(task, core)?;
                 continue;
@@ -554,12 +563,14 @@ impl Context {
 
             // There is no more **local** work to process, try to steal work
             // from other workers.
+            // 获取其他线程的任务
             if let Some(task) = core.steal_work(&self.worker) {
                 // Found work, switch back to processing
                 core.stats.start_processing_scheduled_tasks();
                 core = self.run_task(task, core)?;
             } else {
                 // Wait for work
+                // 等待任务
                 core = if !self.defer.is_empty() {
                     self.park_timeout(core, Some(Duration::from_millis(0)))
                 } else {
@@ -595,6 +606,7 @@ impl Context {
 
         // Run the task
         coop::budget(|| {
+            // 运行任务
             task.run();
             let mut lifo_polls = 0;
 
@@ -682,6 +694,7 @@ impl Context {
 
             // Call `park` with a 0 timeout. This enables the I/O driver, timer, ...
             // to run without actually putting the thread to sleep.
+            // 唤醒io, 定时器
             core = self.park_timeout(core, Some(Duration::from_millis(0)));
 
             // Run regularly scheduled maintenance
@@ -792,6 +805,7 @@ impl Core {
                 .next_remote_task()
                 .or_else(|| self.next_local_task())
         } else {
+            // 先尝试获取lifo_slot任务, 再获取run_queue的任务
             let maybe_task = self.next_local_task();
 
             if maybe_task.is_some() {
@@ -801,6 +815,7 @@ impl Core {
             if worker.inject().is_empty() {
                 return None;
             }
+            // 将inject中的任务, 转移到run_queue中
 
             // Other threads can only **remove** tasks from the current worker's
             // `run_queue`. So, we can be confident that by the time we call
@@ -847,6 +862,7 @@ impl Core {
     /// a new worker will actually try to steal. The idea is to make sure not all
     /// workers will be trying to steal at the same time.
     fn steal_work(&mut self, worker: &Worker) -> Option<Notified> {
+        // 判断是否获取远程任务
         if !self.transition_to_searching(worker) {
             return None;
         }
@@ -859,11 +875,13 @@ impl Core {
             let i = (start + i) % num;
 
             // Don't steal from ourself! We know we don't have work.
+            // 跳过自己
             if i == worker.index {
                 continue;
             }
 
             let target = &worker.handle.shared.remotes[i];
+            // 获取其他worker的任务
             if let Some(task) = target
                 .steal
                 .steal_into(&mut self.run_queue, &mut self.stats)

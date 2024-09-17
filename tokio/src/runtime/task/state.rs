@@ -8,32 +8,41 @@ pub(super) struct State {
 }
 
 /// Current state value.
+/// 任务当前的状态
 #[derive(Copy, Clone)]
 pub(super) struct Snapshot(usize);
 
 type UpdateResult = Result<Snapshot, Snapshot>;
 
 /// The task is currently being run.
+/// 任务运行中
 const RUNNING: usize = 0b0001;
 
 /// The task is complete.
 ///
 /// Once this bit is set, it is never unset.
+/// 完成标识
+/// 一旦设置了此位, 就永远不会取消设置.
 const COMPLETE: usize = 0b0010;
 
 /// Extracts the task's lifecycle value from the state.
+/// 从状态中提取任务的生命周期值.
 const LIFECYCLE_MASK: usize = 0b11;
 
 /// Flag tracking if the task has been pushed into a run queue.
+/// 如果任务已被推入运行队列,则标记跟踪.
 const NOTIFIED: usize = 0b100;
 
 /// The join handle is still around.
+/// 连接句柄仍然存在.
 const JOIN_INTEREST: usize = 0b1_000;
 
 /// A join handle waker has been set.
+/// 已设置连接句柄唤醒器.
 const JOIN_WAKER: usize = 0b10_000;
 
 /// The task has been forcibly cancelled.
+/// 该任务已被强制取消.
 const CANCELLED: usize = 0b100_000;
 
 /// All bits.
@@ -58,6 +67,11 @@ const REF_ONE: usize = 1 << REF_COUNT_SHIFT;
 ///
 /// As the task starts with a `JoinHandle`, `JOIN_INTEREST` is set.
 /// As the task starts with a `Notified`, `NOTIFIED` is set.
+/// 初始化的引用有3个:
+/// 1. `OwnedTasks`或`LocalOwnedTasks`
+/// 2. `Notified`
+/// 3. `JoinHandle`
+/// 由于有`Notified`和`JoinHandle`设置`JOIN_INTEREST`和`NOTIFIED`
 const INITIAL_STATE: usize = (REF_ONE * 3) | JOIN_INTEREST | NOTIFIED;
 
 #[must_use]
@@ -91,8 +105,10 @@ pub(crate) enum TransitionToNotifiedByRef {
 
 /// All transitions are performed via RMW operations. This establishes an
 /// unambiguous modification order.
+/// RMW（Read-Modify-Write, 读-改-写）确保当多个线程或进程访问共享内存或资源时, 数据的完整性和一致性.
 impl State {
     /// Returns a task's initial state.
+    /// 返回初始化引用计数为3的状态
     pub(super) fn new() -> State {
         // The raw task returned by this method has a ref-count of three. See
         // the comment on INITIAL_STATE for more.
@@ -108,6 +124,7 @@ impl State {
 
     /// Attempts to transition the lifecycle to `Running`. This sets the
     /// notified bit to false so notifications during the poll can be detected.
+    /// 尝试将生命周期转换为"正在运行". 这会将通知位设置为 false, 以便可以检测到轮询期间的通知.
     pub(super) fn transition_to_running(&self) -> TransitionToRunning {
         self.fetch_update_action(|mut next| {
             let action;
@@ -117,6 +134,7 @@ impl State {
                 // This happens if the task is either currently running or if it
                 // has already completed, e.g. if it was cancelled during
                 // shutdown. Consume the ref-count and return.
+                // 如果任务正在运行或已经完成(例如, 在关机期间被取消),则会发生这种情况. 使用引用计数并返回.
                 next.ref_dec();
                 if next.ref_count() == 0 {
                     action = TransitionToRunning::Dealloc;
@@ -129,8 +147,10 @@ impl State {
                 next.unset_notified();
 
                 if next.is_cancelled() {
+                    // 任务已经取消
                     action = TransitionToRunning::Cancelled;
                 } else {
+                    // 任务状态成功更新
                     action = TransitionToRunning::Success;
                 }
             }
@@ -142,6 +162,7 @@ impl State {
     ///
     /// The transition to `Idle` fails if the task has been flagged to be
     /// cancelled.
+    /// 将任务从"运行"转换为"空闲".如果任务已被标记为取消, 则到"空闲"的转换会失败.
     pub(super) fn transition_to_idle(&self) -> TransitionToIdle {
         self.fetch_update_action(|curr| {
             assert!(curr.is_running());
@@ -156,6 +177,7 @@ impl State {
 
             if !next.is_notified() {
                 // Polling the future consumes the ref-count of the Notified.
+                // 轮询Future会消耗被通知的引用计数.
                 next.ref_dec();
                 if next.ref_count() == 0 {
                     action = TransitionToIdle::OkDealloc;
@@ -175,9 +197,12 @@ impl State {
     }
 
     /// Transitions the task from `Running` -> `Complete`.
+    /// 将任务从"运行"转换为"完成".
     pub(super) fn transition_to_complete(&self) -> Snapshot {
         const DELTA: usize = RUNNING | COMPLETE;
 
+        // 将`RUNNING`和`COMPLETE`位取反
+        // prev是取反前的值
         let prev = Snapshot(self.val.fetch_xor(DELTA, AcqRel));
         assert!(prev.is_running());
         assert!(!prev.is_complete());
@@ -189,6 +214,9 @@ impl State {
     /// count the specified number of times.
     ///
     /// Returns true if the task should be deallocated.
+    /// 从"完成"过渡到"中断", 减少引用
+    /// 计数指定的次数.
+    /// 如果应释放任务, 则返回 true.
     pub(super) fn transition_to_terminal(&self, count: usize) -> bool {
         let prev = Snapshot(self.val.fetch_sub(count * REF_ONE, AcqRel));
         assert!(
@@ -206,6 +234,9 @@ impl State {
     ///
     /// If a task needs to be submitted, the ref-count is incremented for the
     /// new Notified.
+    /// 将状态转换为"NOTIFIED".
+    /// 如果不需要提交任何任务, 则会消耗一个引用计数.
+    /// 如果需要提交任务, 则引用计数会增加新的 Notified.
     pub(super) fn transition_to_notified_by_val(&self) -> TransitionToNotifiedByVal {
         self.fetch_update_action(|mut snapshot| {
             let action;
@@ -224,6 +255,7 @@ impl State {
             } else if snapshot.is_complete() || snapshot.is_notified() {
                 // We do not need to submit any notifications, but we have to
                 // decrement the ref-count.
+                // 我们不需要提交任何通知, 但我们必须减少引用计数.
                 snapshot.ref_dec();
 
                 if snapshot.ref_count() == 0 {
@@ -234,6 +266,7 @@ impl State {
             } else {
                 // We create a new notified that we can submit. The caller
                 // retains ownership of the ref-count they passed in.
+                // 创建一个可以提交的新通知.被调用者保留其传入的引用计数的所有权.
                 snapshot.set_notified();
                 snapshot.ref_inc();
                 action = TransitionToNotifiedByVal::Submit;
@@ -244,6 +277,7 @@ impl State {
     }
 
     /// Transitions the state to `NOTIFIED`.
+    /// 将状态转换为"NOTIFIED".
     pub(super) fn transition_to_notified_by_ref(&self) -> TransitionToNotifiedByRef {
         self.fetch_update_action(|mut snapshot| {
             if snapshot.is_complete() || snapshot.is_notified() {
@@ -258,6 +292,7 @@ impl State {
             } else {
                 // The task is idle and not notified. We should submit a
                 // notification.
+                // 任务处于空闲状态, 未收到通知.应该提交通知.
                 snapshot.set_notified();
                 snapshot.ref_inc();
                 (TransitionToNotifiedByRef::Submit, Some(snapshot))
@@ -293,6 +328,8 @@ impl State {
     ///
     /// Returns `true` if the task needs to be submitted to the pool for
     /// execution.
+    /// 如果空闲,则设置取消位并将状态转换为"NOTIFIED".
+    /// 如果需要将任务提交到池中执行,则返回"true".
     pub(super) fn transition_to_notified_and_cancel(&self) -> bool {
         self.fetch_update_action(|mut snapshot| {
             if snapshot.is_cancelled() || snapshot.is_complete() {
@@ -306,6 +343,7 @@ impl State {
                 // The set_notified() call is not strictly necessary but it will
                 // in some cases let a wake_by_ref call return without having
                 // to perform a compare_exchange.
+                // 如果任务正在运行, 将其标记为已取消.运行任务的线程将在停止轮询时注意到已取消位, 并终止该任务.
                 snapshot.set_notified();
                 snapshot.set_cancelled();
                 (false, Some(snapshot))
@@ -313,6 +351,7 @@ impl State {
                 // The task is idle. We set the cancelled and notified bits and
                 // submit a notification if the notified bit was not already
                 // set.
+                // 任务处于空闲状态. 我们设置已取消和已通知位, 并且如果尚未设置通知位, 则提交通知.
                 snapshot.set_cancelled();
                 if !snapshot.is_notified() {
                     snapshot.set_notified();
@@ -328,6 +367,8 @@ impl State {
     /// Sets the `CANCELLED` bit and attempts to transition to `Running`.
     ///
     /// Returns `true` if the transition to `Running` succeeded.
+    /// 设置 `CANCELLED` 位并尝试转换至 `Running`.
+    /// 如果转换至 `Running` 成功, 则返回 `true`.
     pub(super) fn transition_to_shutdown(&self) -> bool {
         let mut prev = Snapshot(0);
 
@@ -350,6 +391,7 @@ impl State {
 
     /// Optimistically tries to swap the state assuming the join handle is
     /// __immediately__ dropped on spawn.
+    /// 乐观地尝试交换状态, 假设连接句柄在生成时立即被丢弃.
     pub(super) fn drop_join_handle_fast(&self) -> Result<(), ()> {
         use std::sync::atomic::Ordering::Relaxed;
 
@@ -375,6 +417,8 @@ impl State {
     ///
     /// Returns `Ok` if the operation happens before the task transitions to a
     /// completed state, `Err` otherwise.
+    /// 尝试取消设置 `JOIN_INTEREST` 标志.
+    /// 如果操作在任务转换为完成状态之前发生, 则返回 `Ok`, 否则返回 `Err`.
     pub(super) fn unset_join_interested(&self) -> UpdateResult {
         self.fetch_update(|curr| {
             assert!(curr.is_join_interested());
@@ -394,6 +438,7 @@ impl State {
     ///
     /// Returns `Ok` if the bit is set, `Err` otherwise. This operation fails if
     /// the task has completed.
+    /// 如果操作在任务转换为完成状态之前发生, 则返回 `Ok`, 否则返回 `Err`.
     pub(super) fn set_join_waker(&self) -> UpdateResult {
         self.fetch_update(|curr| {
             assert!(curr.is_join_interested());
@@ -414,6 +459,7 @@ impl State {
     ///
     /// Returns `Ok` has been unset, `Err` otherwise. This operation fails if
     /// the task has completed.
+    /// 如果操作在任务转换为完成状态之前发生, 则返回 `Ok`, 否则返回 `Err`.
     pub(super) fn unset_waker(&self) -> UpdateResult {
         self.fetch_update(|curr| {
             assert!(curr.is_join_interested());
@@ -454,6 +500,7 @@ impl State {
     }
 
     /// Returns `true` if the task should be released.
+    /// 如果需要释放任务则返回"true".
     pub(super) fn ref_dec(&self) -> bool {
         let prev = Snapshot(self.val.fetch_sub(REF_ONE, AcqRel));
         assert!(prev.ref_count() >= 1);
@@ -461,12 +508,14 @@ impl State {
     }
 
     /// Returns `true` if the task should be released.
+    /// 如果需要释放任务则返回"true".
     pub(super) fn ref_dec_twice(&self) -> bool {
         let prev = Snapshot(self.val.fetch_sub(2 * REF_ONE, AcqRel));
         assert!(prev.ref_count() >= 2);
         prev.ref_count() == 2
     }
 
+    /// 执行f并根据返回值更新状态
     fn fetch_update_action<F, T>(&self, mut f: F) -> T
     where
         F: FnMut(Snapshot) -> (T, Option<Snapshot>),

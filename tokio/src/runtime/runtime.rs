@@ -327,6 +327,7 @@ impl Runtime {
     /// ```
     ///
     /// [handle]: fn@Handle::block_on
+    /// 阻塞运行, 拿到Future的Output才会返回
     #[track_caller]
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         if cfg!(debug_assertions) && std::mem::size_of::<F>() > BOX_FUTURE_THRESHOLD {

@@ -277,6 +277,7 @@ impl CachedParkThread {
 
         pin!(f);
 
+        // 死循环获取返回值
         loop {
             if let Ready(v) = crate::runtime::coop::budget(|| f.as_mut().poll(&mut cx)) {
                 return Ok(v);

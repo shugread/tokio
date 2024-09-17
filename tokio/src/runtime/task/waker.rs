@@ -13,6 +13,7 @@ pub(super) struct WakerRef<'a, S: 'static> {
 
 /// Returns a `WakerRef` which avoids having to preemptively increase the
 /// refcount if there is no need to do so.
+/// 返回一个"WakerRef", 以避免在没有必要的情况下预先增加引用计数.
 pub(super) fn waker_ref<S>(header: &NonNull<Header>) -> WakerRef<'_, S>
 where
     S: Schedule,

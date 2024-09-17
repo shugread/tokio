@@ -80,6 +80,8 @@ impl Handle {
     /// [`Sleep`]: struct@crate::time::Sleep
     /// [`TcpStream`]: struct@crate::net::TcpStream
     /// [`tokio::spawn`]: fn@crate::spawn
+    ///
+    /// 设置当前的线程Handle, 在EnterGuard调用drop时恢复Handle
     pub fn enter(&self) -> EnterGuard<'_> {
         EnterGuard {
             _guard: match context::try_set_current(&self.inner) {

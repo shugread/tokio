@@ -92,14 +92,15 @@ impl Driver {
     /// Creates a new event loop, returning any error that happened during the
     /// creation.
     pub(crate) fn new(nevents: usize) -> io::Result<(Driver, Handle)> {
+        // 使用mio的Poll
         let poll = mio::Poll::new()?;
         #[cfg(not(target_os = "wasi"))]
-        let waker = mio::Waker::new(poll.registry(), TOKEN_WAKEUP)?;
+        let waker = mio::Waker::new(poll.registry(), TOKEN_WAKEUP)?; // 注册唤醒事件
         let registry = poll.registry().try_clone()?;
 
         let driver = Driver {
             signal_ready: false,
-            events: mio::Events::with_capacity(nevents),
+            events: mio::Events::with_capacity(nevents), // 创建事件
             poll,
         };
 

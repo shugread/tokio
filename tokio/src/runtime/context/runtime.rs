@@ -31,6 +31,7 @@ pub(crate) struct EnterRuntimeGuard {
 
 /// Marks the current thread as being within the dynamic extent of an
 /// executor.
+/// 保证当前线程只有一个任务阻塞
 #[track_caller]
 pub(crate) fn enter_runtime<F, R>(handle: &scheduler::Handle, allow_block_in_place: bool, f: F) -> R
 where

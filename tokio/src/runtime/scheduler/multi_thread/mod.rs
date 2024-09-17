@@ -62,6 +62,7 @@ impl MultiThread {
         seed_generator: RngSeedGenerator,
         config: Config,
     ) -> (MultiThread, Arc<Handle>, Launch) {
+        // 创建挂起类型
         let parker = Parker::new(driver);
         let (handle, launch) = worker::create(
             size,

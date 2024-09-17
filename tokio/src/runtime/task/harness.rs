@@ -485,6 +485,7 @@ fn panic_result_to_join_error(
 /// stage field.
 fn poll_future<T: Future, S: Schedule>(core: &Core<T, S>, cx: Context<'_>) -> Poll<()> {
     // Poll the future.
+    // 获取future返回值
     let output = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         struct Guard<'a, T: Future, S: Schedule> {
             core: &'a Core<T, S>,
@@ -510,6 +511,7 @@ fn poll_future<T: Future, S: Schedule>(core: &Core<T, S>, cx: Context<'_>) -> Po
     };
 
     // Catch and ignore panics if the future panics on drop.
+    // 保存future返回值
     let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         core.store_output(output);
     }));

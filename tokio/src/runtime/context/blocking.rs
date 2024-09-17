@@ -63,6 +63,7 @@ impl BlockingRegionGuard {
         use crate::runtime::park::CachedParkThread;
 
         let mut park = CachedParkThread::new();
+        // 阻塞运行
         park.block_on(f)
     }
 

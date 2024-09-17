@@ -47,6 +47,7 @@ impl Driver {
     pub(crate) fn new(cfg: Cfg) -> io::Result<(Self, Handle)> {
         let (io_stack, io_handle, signal_handle) = create_io_stack(cfg.enable_io, cfg.nevents)?;
 
+        // 创建时钟
         let clock = create_clock(cfg.enable_pause_time, cfg.start_paused);
 
         let (time_driver, time_handle) =
@@ -149,6 +150,7 @@ cfg_io_driver! {
         let ret = if enabled {
             let (io_driver, io_handle) = crate::runtime::io::Driver::new(nevents)?;
 
+            // 创建信号驱动器
             let (signal_driver, signal_handle) = create_signal_driver(io_driver, &io_handle)?;
             let process_driver = create_process_driver(signal_driver);
 

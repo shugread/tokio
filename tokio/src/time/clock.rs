@@ -227,7 +227,7 @@ cfg_test_util! {
         /// Returns a new `Clock` instance that uses the current execution context's
         /// source of time.
         pub(crate) fn new(enable_pausing: bool, start_paused: bool) -> Clock {
-            let now = std::time::Instant::now();
+            let now = std::time::Instant::now(); // 记录当前时间
 
             let clock = Clock {
                 inner: Mutex::new(Inner {
