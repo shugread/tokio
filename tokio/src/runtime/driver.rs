@@ -20,16 +20,20 @@ pub(crate) struct Driver {
 #[derive(Debug)]
 pub(crate) struct Handle {
     /// IO driver handle
+    /// IO驱动句柄
     pub(crate) io: IoHandle,
 
     /// Signal driver handle
+    /// 信号驱动句柄
     #[cfg_attr(any(not(unix), loom), allow(dead_code))]
     pub(crate) signal: SignalHandle,
 
     /// Time driver handle
+    /// 时间驱动句柄
     pub(crate) time: TimeHandle,
 
     /// Source of `Instant::now()`
+    /// 时钟
     #[cfg_attr(not(all(feature = "time", feature = "test-util")), allow(dead_code))]
     pub(crate) clock: Clock,
 }
@@ -82,6 +86,7 @@ impl Driver {
 }
 
 impl Handle {
+    // 唤醒驱动
     pub(crate) fn unpark(&self) {
         #[cfg(feature = "time")]
         if let Some(handle) = &self.time {

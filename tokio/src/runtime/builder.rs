@@ -67,6 +67,7 @@ pub struct Builder {
     worker_threads: Option<usize>,
 
     /// Cap on thread usage.
+    /// 线程使用上限.
     max_blocking_threads: usize,
 
     /// Name fn used for threads spawned by the runtime.
@@ -74,28 +75,36 @@ pub struct Builder {
     pub(super) thread_name: ThreadNameFn,
 
     /// Stack size used for threads spawned by the runtime.
+    /// 运行时产生的线程使用的堆栈大小.
     pub(super) thread_stack_size: Option<usize>,
 
     /// Callback to run after each thread starts.
     ///
+    /// 每个线程启动后运行的回调.
     pub(super) after_start: Option<Callback>,
 
     /// To run before each worker thread stops
+    /// 每个线程停止前运行的回调.
     pub(super) before_stop: Option<Callback>,
 
     /// To run before each worker thread is parked.
+    /// 每个线程挂起前运行的回调.
     pub(super) before_park: Option<Callback>,
 
     /// To run after each thread is unparked.
+    /// 每个线程唤醒后运行的回调.
     pub(super) after_unpark: Option<Callback>,
 
     /// To run before each task is spawned.
+    /// Future进入运行时的回调
     pub(super) before_spawn: Option<TaskCallback>,
 
     /// To run after each task is terminated.
+    /// 任务中断后的回调
     pub(super) after_termination: Option<TaskCallback>,
 
     /// Customizable keep alive timeout for `BlockingPool`
+    /// 可自定义`BlockingPool`的保持活动超时
     pub(super) keep_alive: Option<Duration>,
 
     /// How many ticks before pulling a task from the global/remote queue?
@@ -105,19 +114,24 @@ pub struct Builder {
     /// default value or use some other strategy to decide when to poll from the
     /// global queue. For example, the multi-threaded scheduler uses a
     /// self-tuning strategy based on mean task poll times.
+    /// 从全局/远程队列中提取任务之前需要多少个时钟周期?
     pub(super) global_queue_interval: Option<u32>,
 
     /// How many ticks before yielding to the driver for timer and I/O events?
+    /// 在将计时器和 I/O 事件交给驱动程序之前需要多少个刻度?
     pub(super) event_interval: u32,
 
+    /// worker本地队列容量
     pub(super) local_queue_capacity: usize,
 
     /// When true, the multi-threade scheduler LIFO slot should not be used.
     ///
     /// This option should only be exposed as unstable.
+    /// 当为真时,不应使用多线程调度程序 LIFO 槽.
     pub(super) disable_lifo_slot: bool,
 
     /// Specify a random number generator seed to provide deterministic results
+    /// 指定随机数生成器种子以提供确定性结果
     pub(super) seed_generator: RngSeedGenerator,
 
     /// When true, enables task poll count histogram instrumentation.

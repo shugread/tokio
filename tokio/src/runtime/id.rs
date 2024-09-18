@@ -29,6 +29,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 /// features][unstable] for details.
 ///
 /// [unstable]: crate#unstable-features
+/// 一个不透明的 ID,用于唯一标识相对于所有其他当前正在运行的运行时的运行时.
 #[cfg_attr(not(tokio_unstable), allow(unreachable_pub))]
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
 pub struct Id(NonZeroU64);

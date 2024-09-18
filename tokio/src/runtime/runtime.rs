@@ -96,12 +96,15 @@ cfg_rt_multi_thread! {
 #[derive(Debug)]
 pub struct Runtime {
     /// Task scheduler
+    /// 任务调度
     scheduler: Scheduler,
 
     /// Handle to runtime, also contains driver handles
+    /// 驱动句柄
     handle: Handle,
 
     /// Blocking pool handle, used to signal shutdown
+    /// 阻塞池句柄,用于发出关闭信号
     blocking_pool: BlockingPool,
 }
 
@@ -112,8 +115,10 @@ pub struct Runtime {
 #[non_exhaustive]
 pub enum RuntimeFlavor {
     /// The flavor that executes all tasks on the current thread.
+    /// 在当前线程上执行所有任务.
     CurrentThread,
     /// The flavor that executes tasks across multiple threads.
+    /// 在多线程上执行所有任务.
     MultiThread,
     /// The flavor that executes tasks across multiple threads.
     #[cfg(tokio_unstable)]
@@ -121,12 +126,15 @@ pub enum RuntimeFlavor {
 }
 
 /// The runtime scheduler is either a multi-thread or a current-thread executor.
+/// 运行时调度程序要么是多线程执行器,要么是当前线程执行器.
 #[derive(Debug)]
 pub(super) enum Scheduler {
     /// Execute all tasks on the current-thread.
+    /// 所有任务在当前线程执行
     CurrentThread(CurrentThread),
 
     /// Execute tasks across multiple threads.
+    /// 多线程执行任务
     #[cfg(feature = "rt-multi-thread")]
     MultiThread(MultiThread),
 
@@ -176,6 +184,7 @@ impl Runtime {
     /// [main]: ../attr.main.html
     /// [threaded scheduler]: index.html#threaded-scheduler
     /// [runtime builder]: crate::runtime::Builder
+    /// 使用默认配置值创建一个新的运行时实例.
     #[cfg(feature = "rt-multi-thread")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rt-multi-thread")))]
     pub fn new() -> std::io::Result<Runtime> {
@@ -202,6 +211,7 @@ impl Runtime {
     ///
     /// // Use the handle...
     /// ```
+    /// 返回运行时生成器的句柄.
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
@@ -235,6 +245,7 @@ impl Runtime {
     /// });
     /// # }
     /// ```
+    /// 将Future提交给运行时
     #[track_caller]
     pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
     where
@@ -265,6 +276,7 @@ impl Runtime {
     /// });
     /// # }
     /// ```
+    /// 在专用于阻塞操作的执行器上运行提供的函数.
     #[track_caller]
     pub fn spawn_blocking<F, R>(&self, func: F) -> JoinHandle<R>
     where

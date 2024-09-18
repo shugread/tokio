@@ -35,14 +35,17 @@ cfg_rt_multi_thread! {
 
 struct Context {
     /// Uniquely identifies the current thread
+    /// 唯一标识当前线程
     #[cfg(feature = "rt")]
     thread_id: Cell<Option<ThreadId>>,
 
     /// Handle to the runtime scheduler running on the current thread.
+    /// 当前线程上运行的运行时调度程序的句柄.
     #[cfg(feature = "rt")]
     current: current::HandleCell,
 
     /// Handle to the scheduler's internal "context"
+    /// 调度程序的内部"Context"
     #[cfg(feature = "rt")]
     scheduler: Scoped<scheduler::Context>,
 
@@ -54,6 +57,7 @@ struct Context {
     /// handle may not reference the runtime currently executing. This
     /// is because other runtime handles may be set to current from
     /// within a runtime.
+    /// 跟踪当前线程是否正在驱动运行时.
     #[cfg(feature = "rt")]
     runtime: Cell<EnterRuntime>,
 
@@ -62,6 +66,7 @@ struct Context {
 
     /// Tracks the amount of "work" a task may still do before yielding back to
     /// the scheduler
+    /// 跟踪任务在返回调度程序之前仍可能完成的"工作"量
     budget: Cell<coop::Budget>,
 
     #[cfg(all(

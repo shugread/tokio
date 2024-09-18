@@ -8,6 +8,7 @@ impl TaskHooks {
     }
 }
 
+// 回调函数
 #[derive(Clone)]
 pub(crate) struct TaskHooks {
     pub(crate) task_spawn_callback: Option<TaskCallback>,

@@ -9,6 +9,7 @@ use crate::runtime::signal::{Driver as SignalDriver, Handle as SignalHandle};
 use std::time::Duration;
 
 /// Responsible for cleaning up orphaned child processes on Unix platforms.
+/// 负责清理 Unix 平台上的孤儿进程.
 #[derive(Debug)]
 pub(crate) struct Driver {
     park: SignalDriver,
@@ -19,6 +20,7 @@ pub(crate) struct Driver {
 
 impl Driver {
     /// Creates a new signal `Driver` instance that delegates wakeups to `park`.
+    /// 创建一个新的信号`Driver`实例,将唤醒委托给`park`.
     pub(crate) fn new(park: SignalDriver) -> Self {
         let signal_handle = park.handle();
 

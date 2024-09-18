@@ -57,6 +57,7 @@ impl Budget {
     }
 
     /// Returns an unconstrained budget. Operations will not be limited.
+    /// 返回不受约束的预算.操作不会受到限制.
     pub(super) const fn unconstrained() -> Budget {
         Budget(None)
     }
@@ -68,6 +69,7 @@ impl Budget {
 
 /// Runs the given closure with a cooperative task budget. When the function
 /// returns, the budget is reset to the value prior to calling the function.
+/// 使用协作任务预算运行给定的闭包.当函数返回时,预算将重置为调用函数之前的值.
 #[inline(always)]
 pub(crate) fn budget<R>(f: impl FnOnce() -> R) -> R {
     with_budget(Budget::initial(), f)
@@ -75,6 +77,7 @@ pub(crate) fn budget<R>(f: impl FnOnce() -> R) -> R {
 
 /// Runs the given closure with an unconstrained task budget. When the function returns, the budget
 /// is reset to the value prior to calling the function.
+/// 使用不受约束的任务预算运行给定的闭包.当函数返回时,预算将重置为调用函数之前的值.
 #[inline(always)]
 pub(crate) fn with_unconstrained<R>(f: impl FnOnce() -> R) -> R {
     with_budget(Budget::unconstrained(), f)
@@ -111,11 +114,13 @@ fn with_budget<R>(budget: Budget, f: impl FnOnce() -> R) -> R {
 pub(crate) fn has_budget_remaining() -> bool {
     // If the current budget cannot be accessed due to the thread-local being
     // shutdown, then we assume there is budget remaining.
+    // 如果由于线程本地关闭而无法访问当前预算,则我们假定还有预算剩余.
     context::budget(|cell| cell.get().has_remaining()).unwrap_or(true)
 }
 
 cfg_rt_multi_thread! {
     /// Sets the current task's budget.
+    /// 设置当前任务的预算.
     pub(crate) fn set(budget: Budget) {
         let _ = context::budget(|cell| cell.set(budget));
     }
@@ -125,6 +130,8 @@ cfg_rt! {
     /// Forcibly removes the budgeting constraints early.
     ///
     /// Returns the remaining budget
+    /// 强制提前移除预算约束.
+    /// 返回剩余预算
     pub(crate) fn stop() -> Budget {
         context::budget(|cell| {
             let prev = cell.get();

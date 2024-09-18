@@ -12,6 +12,7 @@ pub(crate) struct ParkThread {
 }
 
 /// Unblocks a thread that was blocked by `ParkThread`.
+/// 解除被`ParkThread`阻塞的线程.
 #[derive(Clone, Debug)]
 pub(crate) struct UnparkThread {
     inner: Arc<Inner>,
@@ -84,6 +85,7 @@ impl Inner {
     fn park(&self) {
         // If we were previously notified then we consume this notification and
         // return quickly.
+        // 如果我们之前收到过通知,那么我们就会使用此通知并快速返回.
         if self
             .state
             .compare_exchange(NOTIFIED, EMPTY, SeqCst, SeqCst)
@@ -95,6 +97,7 @@ impl Inner {
         // Otherwise we need to coordinate going to sleep
         let mut m = self.mutex.lock();
 
+        // 设置阻塞状态
         match self.state.compare_exchange(EMPTY, PARKED, SeqCst, SeqCst) {
             Ok(_) => {}
             Err(NOTIFIED) => {
@@ -104,6 +107,7 @@ impl Inner {
                 // acquire operation that synchronizes with that `unpark` to observe
                 // any writes it made before the call to unpark. To do that we must
                 // read from the write it made to `state`.
+                // 被unpark
                 let old = self.state.swap(EMPTY, SeqCst);
                 debug_assert_eq!(old, NOTIFIED, "park state changed unexpectedly");
 
@@ -113,6 +117,7 @@ impl Inner {
         }
 
         loop {
+            // 线程挂起
             m = self.condvar.wait(m).unwrap();
 
             if self
@@ -162,6 +167,7 @@ impl Inner {
         // from a notification, we just want to unconditionally set the state back to
         // empty, either consuming a notification or un-flagging ourselves as
         // parked.
+        // 带超时的挂起线程
         let (_m, _result) = self.condvar.wait_timeout(m, dur).unwrap();
 
         match self.state.swap(EMPTY, SeqCst) {
@@ -197,6 +203,7 @@ impl Inner {
         // to release `lock`.
         drop(self.mutex.lock());
 
+        // 唤醒一个线程
         self.condvar.notify_one();
     }
 
@@ -226,6 +233,7 @@ use std::rc::Rc;
 use std::task::{RawWaker, RawWakerVTable, Waker};
 
 /// Blocks the current thread using a condition variable.
+/// 使用条件变量阻止当前线程.
 #[derive(Debug)]
 pub(crate) struct CachedParkThread {
     _anchor: PhantomData<Rc<()>>,
