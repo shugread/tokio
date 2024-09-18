@@ -21,6 +21,7 @@ use std::{fmt, num::NonZeroU64};
 /// features][unstable] for details.
 ///
 /// [unstable]: crate#unstable-features
+/// 一个不透明的 ID,用于唯一地标识相对于所有其他当前正在运行的任务的任务.
 #[cfg_attr(docsrs, doc(cfg(all(feature = "rt", tokio_unstable))))]
 #[cfg_attr(not(tokio_unstable), allow(unreachable_pub))]
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
@@ -60,6 +61,7 @@ pub fn id() -> Id {
 ///
 /// [task ID]: crate::task::Id
 /// [unstable]: crate#unstable-features
+/// 返回当前正在运行的任务的 [`Id`],如果在任务外部调用,则返回 `None`.
 #[cfg_attr(not(tokio_unstable), allow(unreachable_pub))]
 #[track_caller]
 pub fn try_id() -> Option<Id> {

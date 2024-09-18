@@ -446,7 +446,7 @@ pub(crate) trait Schedule: Sync + Sized + 'static {
 
     /// Schedule the task to run in the near future, yielding the thread to
     /// other tasks.
-    /// 调度任务在不久的将来运行，将线程让给其他任务.
+    /// 调度任务在不久的将来运行,将线程让给其他任务.
     fn yield_now(&self, task: Notified<Self>) {
         self.schedule(task);
     }
@@ -722,7 +722,7 @@ unsafe impl<S> linked_list::Link for Task<S> {
 /// The id of a task is never changed after creation of the task, so the return value of
 /// `get_shard_id` will not change. (The cast may throw away the upper 32 bits of the task id, but
 /// the shard id still won't change from call to call.)
-/// 任务创建后，其 ID 永远不会改变，因此 `get_shard_id` 的返回值不会改变.(转换可能会丢弃任务 ID 的高 32 位,但共享 ID 仍然不会在每次调用时改变.)
+/// 任务创建后,其 ID 永远不会改变,因此 `get_shard_id` 的返回值不会改变.(转换可能会丢弃任务 ID 的高 32 位,但共享 ID 仍然不会在每次调用时改变.)
 unsafe impl<S> sharded_list::ShardedListItem for Task<S> {
     unsafe fn get_shard_id(target: NonNull<Self::Target>) -> usize {
         // SAFETY: The caller guarantees that `target` points at a valid task.

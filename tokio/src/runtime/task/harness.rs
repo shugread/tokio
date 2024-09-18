@@ -13,6 +13,7 @@ use std::ptr::NonNull;
 use std::task::{Context, Poll, Waker};
 
 /// Typed raw task handle.
+/// 原始任务句柄.
 pub(super) struct Harness<T: Future, S: 'static> {
     cell: NonNull<Cell<T, S>>,
 }
@@ -52,6 +53,8 @@ where
 /// Task operations that can be implemented without being generic over the
 /// scheduler or task. Only one version of these methods should exist in the
 /// final binary.
+/// 无需通过调度程序或任务通用即可实现的任务操作.
+/// 最终二进制文件中应仅存在这些方法的一个版本.
 impl RawTask {
     pub(super) fn drop_reference(self) {
         if self.state().ref_dec() {
@@ -64,6 +67,8 @@ impl RawTask {
     ///
     /// The caller does not need to hold a ref-count besides the one that was
     /// passed to this call.
+    /// 此调用使用引用计数并通知任务.这将创建一个新的通知并在必要时提交.
+    /// 除了传递给此调用的引用计数之外,调用者不需要保存引用计数.
     pub(super) fn wake_by_val(&self) {
         use super::state::TransitionToNotifiedByVal;
 
@@ -76,10 +81,14 @@ impl RawTask {
                 // The old ref-count is retained for now to ensure that the task
                 // is not dropped during the call to `schedule` if the call
                 // drops the task it was given.
+                // 调用者给了我们一个引用计数,转换创建了一个新的引用计数,所以我们现在持有两个.
+                // 我们将新的引用计数变为 Notified,并将其传递给 `schedule` 调用.
+                // 旧的引用计数暂时保留,以确保在 `schedule` 调用期间,如果调用放弃给定的任务,则不会放弃该任务.
                 self.schedule();
 
                 // Now that we have completed the call to schedule, we can
                 // release our ref-count.
+                // 现在我们已经完成了对 schedule 的调用,我们可以释放我们的引用计数.
                 self.drop_reference();
             }
             TransitionToNotifiedByVal::Dealloc => {
@@ -92,6 +101,8 @@ impl RawTask {
     /// This call notifies the task. It will not consume any ref-counts, but the
     /// caller should hold a ref-count.  This will create a new Notified and
     /// submit it if necessary.
+    /// 此调用通知任务.它不会消耗任何引用计数,
+    /// 但调用者应保留一个引用计数.这将创建一个新的通知并必要时提交它.
     pub(super) fn wake_by_ref(&self) {
         use super::state::TransitionToNotifiedByRef;
 
@@ -101,6 +112,8 @@ impl RawTask {
                 // and the caller also holds a ref-count. The caller's ref-count
                 // ensures that the task is not destroyed even if the new task
                 // is dropped before `schedule` returns.
+                // 上述转换增加了新任务的引用计数,调用者也持有一个引用计数.
+                // 调用者的引用计数确保即使在 `schedule` 返回之前删除新任务,也不会销毁该任务.
                 self.schedule();
             }
             TransitionToNotifiedByRef::DoNothing => {}
@@ -114,6 +127,7 @@ impl RawTask {
     /// This is similar to `shutdown` except that it asks the runtime to perform
     /// the shutdown. This is necessary to avoid the shutdown happening in the
     /// wrong thread for non-Send tasks.
+    /// 远程中止任务.
     pub(super) fn remote_abort(&self) {
         if self.state().transition_to_notified_and_cancel() {
             // The transition has created a new ref-count, which we turn into
@@ -149,12 +163,15 @@ where
     ///
     /// All necessary state checks and transitions are performed.
     /// Panics raised while polling the future are handled.
+    /// 轮询内部Future.消耗引用计数.
     pub(super) fn poll(self) {
         // We pass our ref-count to `poll_inner`.
+        // 将引用计数传递给`poll_inner`.
         match self.poll_inner() {
             PollFuture::Notified => {
                 // The `poll_inner` call has given us two ref-counts back.
                 // We give one of them to a new task and call `yield_now`.
+                // `poll_inner` 调用返回了两个引用计数.我们将其中一个提供给新任务并调用 `yield_now`.
                 self.core()
                     .scheduler
                     .yield_now(Notified(self.get_new_task()));
@@ -189,6 +206,11 @@ where
     ///
     /// Otherwise the ref-count is consumed and the caller should not access
     /// `self` again.
+    /// 轮询任务并在必要时取消它.这将获得引用计数的所有权.
+    /// 如果返回值为 Notified,则调用者将获得两个引用计数的所有权.
+    /// 如果返回值为 Complete,则调用者将获得单个引用计数的所有权,该引用计数应传递给 `complete`.
+    /// 如果返回值为 `Dealloc`,则此调用消耗了最后一个引用计数,调用者应调用 `dealloc`.
+    /// 否则,引用计数将被消耗,调用者不应再次访问 `self`.
     fn poll_inner(&self) -> PollFuture {
         use super::state::{TransitionToIdle, TransitionToRunning};
 
@@ -206,10 +228,12 @@ where
                 let header_ptr = self.header_ptr();
                 let waker_ref = waker_ref::<S>(&header_ptr);
                 let cx = Context::from_waker(&waker_ref);
+                // 轮询Future
                 let res = poll_future(self.core(), cx);
 
                 if res == Poll::Ready(()) {
                     // The future completed. Move on to complete the task.
+                    // Future已完成.
                     return PollFuture::Complete;
                 }
 
@@ -217,6 +241,7 @@ where
                 if let TransitionToIdle::Cancelled = transition_res {
                     // The transition to idle failed because the task was
                     // cancelled during the poll.
+                    // 由于轮询期间任务被取消,因此转换为空闲状态失败.
                     cancel_task(self.core());
                 }
                 transition_result_to_poll_future(transition_res)
@@ -236,6 +261,7 @@ where
     /// task. If the task is currently running or in a state of completion, then
     /// there is nothing further to do. When the task completes running, it will
     /// notice the `CANCELLED` bit and finalize the task.
+    /// 强制关闭任务.
     pub(super) fn shutdown(self) {
         if !self.state().transition_to_shutdown() {
             // The task is concurrently running. No further work needed.
@@ -277,6 +303,7 @@ where
     // ===== join handle =====
 
     /// Read the task output into `dst`.
+    /// 读取任务输出到`dst`
     pub(super) fn try_read_output(self, dst: &mut Poll<super::Result<T::Output>>, waker: &Waker) {
         if can_read_output(self.header(), self.trailer(), waker) {
             *dst = Poll::Ready(self.core().take_output());
@@ -286,6 +313,7 @@ where
     pub(super) fn drop_join_handle_slow(self) {
         // Try to unset `JOIN_INTEREST`. This must be done as a first step in
         // case the task concurrently completed.
+        // 尝试取消设置 `JOIN_INTEREST`.如果任务同时完成,则必须首先执行此操作.
         if self.state().unset_join_interested().is_err() {
             // It is our responsibility to drop the output. This is critical as
             // the task output may not be `Send` and as such must remain with
@@ -308,6 +336,7 @@ where
     // ====== internal ======
 
     /// Completes the task. This method assumes that the state is RUNNING.
+    /// 完成任务.此方法假定状态为 RUNNING.
     fn complete(self) {
         // The future has completed and its output has been written to the task
         // stage. We transition from running to complete.
@@ -321,11 +350,13 @@ where
                 // The `JoinHandle` is not interested in the output of
                 // this task. It is our responsibility to drop the
                 // output.
+                // 丢弃任务输出
                 self.core().drop_future_or_output();
             } else if snapshot.is_join_waker_set() {
                 // Notify the waker. Reading the waker field is safe per rule 4
                 // in task/mod.rs, since the JOIN_WAKER bit is set and the call
                 // to transition_to_complete() above set the COMPLETE bit.
+                // JoinHandle获取返回值
                 self.trailer().wake_join();
             }
         }));
@@ -345,6 +376,7 @@ where
         }
 
         // The task has completed execution and will no longer be scheduled.
+        // 任务完成, 不再调度
         let num_release = self.release();
 
         if self.state().transition_to_terminal(num_release) {
@@ -354,6 +386,7 @@ where
 
     /// Releases the task from the scheduler. Returns the number of ref-counts
     /// that should be decremented.
+    /// 从调度程序中释放任务.返回应减少的引用计数的数.
     fn release(&self) -> usize {
         // We don't actually increment the ref-count here, but the new task is
         // never destroyed, so that's ok.
@@ -375,6 +408,7 @@ where
     /// task holds the task alive until after the use of `self`. Passing the
     /// returned Task to any method on `self` is unsound if dropping the Task
     /// could drop `self` before the call on `self` returned.
+    /// 创建一个拥有自己的引用计数的新任务.
     fn get_new_task(&self) -> Task<S> {
         // safety: The header is at the beginning of the cell, so this cast is
         // safe.
@@ -391,6 +425,7 @@ fn can_read_output(header: &Header, trailer: &Trailer, waker: &Waker) -> bool {
     if !snapshot.is_complete() {
         // If the task is not complete, try storing the provided waker in the
         // task's waker field.
+        // 如果任务未完成,尝试将提供的唤醒器存储在任务的waker字段中.
 
         let res = if snapshot.is_join_waker_set() {
             // If JOIN_WAKER is set, then JoinHandle has previously stored a
@@ -399,12 +434,14 @@ fn can_read_output(header: &Header, trailer: &Trailer, waker: &Waker) -> bool {
             // Optimization: if the stored waker and the provided waker wake the
             // same task, then return without touching the waker field. (Reading
             // the waker field below is safe per rule 3 in task/mod.rs.)
+            // 如果存储的waker和提供的waker唤醒同一个任务,则返回而不触碰 waker 字段.
             if unsafe { trailer.will_wake(waker) } {
                 return false;
             }
 
             // Otherwise swap the stored waker with the provided waker by
             // following the rule 5 in task/mod.rs.
+            // 设置提供的waker
             header
                 .state
                 .unset_waker()
@@ -413,6 +450,7 @@ fn can_read_output(header: &Header, trailer: &Trailer, waker: &Waker) -> bool {
             // If JOIN_WAKER is unset, then JoinHandle has mutable access to the
             // waker field per rule 2 in task/mod.rs; therefore, skip step (i)
             // of rule 5 and try to store the provided waker in the waker field.
+            // 如果JOIN_WAKER没有设置, 设置waker
             set_join_waker(header, trailer, waker.clone(), snapshot)
         };
 
@@ -445,6 +483,7 @@ fn set_join_waker(
     let res = header.state.set_join_waker();
 
     // If the state could not be updated, then clear the join waker
+    // 如果状态无法更新,则清除连接waker
     if res.is_err() {
         unsafe {
             trailer.set_waker(None);
@@ -462,6 +501,7 @@ enum PollFuture {
 }
 
 /// Cancels the task and store the appropriate error in the stage field.
+/// 取消任务并将适当的错误存储在阶段字段中.
 fn cancel_task<T: Future, S: Schedule>(core: &Core<T, S>) {
     // Drop the future from a panic guard.
     let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {

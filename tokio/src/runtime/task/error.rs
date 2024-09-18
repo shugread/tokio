@@ -6,6 +6,7 @@ use super::Id;
 use crate::util::SyncWrapper;
 cfg_rt! {
     /// Task failed to execute to completion.
+    /// 任务未能执行完成.
     pub struct JoinError {
         repr: Repr,
         id: Id,

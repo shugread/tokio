@@ -5,6 +5,11 @@
 //!
 //! The collections can be closed to prevent adding new tasks during shutdown of
 //! the scheduler with the collection.
+//! 此模块具有用于存储在调度程序上生成的任务的容器.
+//! `OwnedTasks` 容器是线程安全的,但只能存储实现 Send 的任务.
+//! `LocalOwnedTasks` 容器不是线程安全的,但可以存储非 Send 任务.
+//!
+//! 可以关闭集合以防止在使用该集合关闭调度程序期间添加新任务.
 
 use crate::future::Future;
 use crate::loom::cell::UnsafeCell;
@@ -24,7 +29,11 @@ use std::num::NonZeroU64;
 // overflown, but the checks are not supposed to ever fail unless there is a
 // bug in Tokio, so we accept that certain bugs would not be caught if the two
 // mixed up runtimes happen to have the same id.
-
+// 下面模块中的 id 用于验证给定任务是否存储在此 OwnedTasks 中,还是其他任务中.
+// 计数器从一开始,因此我们可以对不属于任何列表的任务使用"None".
+//
+// 如果计数器溢出,则从技术上讲,此文件中的安全检查可能会被违反,但除非 Tokio 中存在错误,
+// 否则检查不应该失败,因此我们接受如果两个混合运行时恰好具有相同的 id,则某些错误不会被捕获.
 cfg_has_atomic_u64! {
     use std::sync::atomic::AtomicU64;
 
@@ -86,6 +95,7 @@ impl<S: 'static> OwnedTasks<S> {
 
     /// Binds the provided task to this `OwnedTasks` instance. This fails if the
     /// `OwnedTasks` has been closed.
+    /// 将提供的任务绑定到此 `OwnedTasks` 实例.如果 `OwnedTasks` 已关闭,则此操作会失败.
     pub(crate) fn bind<T>(
         &self,
         task: T,
@@ -110,28 +120,33 @@ impl<S: 'static> OwnedTasks<S> {
         unsafe {
             // safety: We just created the task, so we have exclusive access
             // to the field.
+            // 设置owner_id
             task.header().set_owner_id(self.id);
         }
 
         let shard = self.list.lock_shard(&task);
         // Check the closed flag in the lock for ensuring all that tasks
         // will shut down after the OwnedTasks has been closed.
+        // 检查锁中的关闭标志,以确保所有任务将在 OwnedTasks 关闭后关闭.
         if self.closed.load(Ordering::Acquire) {
             drop(shard);
             task.shutdown();
             return None;
         }
+        // 保存task到OwnerTasks中
         shard.push(task);
         Some(notified)
     }
 
     /// Asserts that the given task is owned by this `OwnedTasks` and convert it to
     /// a `LocalNotified`, giving the thread permission to poll this task.
+    /// 断言给定的任务由此`OwnedTasks`拥有,并将其转换为`LocalNotified`,从而授予线程轮询此任务的权限.
     #[inline]
     pub(crate) fn assert_owner(&self, task: Notified<S>) -> LocalNotified<S> {
         debug_assert_eq!(task.header().get_owner_id(), Some(self.id));
         // safety: All tasks bound to this OwnedTasks are Send, so it is safe
         // to poll it on this thread no matter what thread we are on.
+        // 安全性:所有绑定到此 OwnedTasks 的任务都将被发送,因此无论我们在哪个线程上,都可以安全地在此线程上轮询它.
         LocalNotified {
             task: task.0,
             _not_send: PhantomData,
@@ -143,6 +158,9 @@ impl<S: 'static> OwnedTasks<S> {
     ///
     /// The parameter start determines which shard this method will start at.
     /// Using different values for each worker thread reduces contention.
+    /// 关闭集合中的所有任务.
+    /// 此调用还会关闭集合,从而阻止添加新任务.
+    /// 参数 start 确定此方法将从哪个分片启动.为每个工作线程使用不同的值可减少争用.
     pub(crate) fn close_and_shutdown_all(&self, start: usize)
     where
         S: Schedule,
@@ -179,6 +197,7 @@ impl<S: 'static> OwnedTasks<S> {
     pub(crate) fn remove(&self, task: &Task<S>) -> Option<Task<S>> {
         // If the task's owner ID is `None` then it is not part of any list and
         // doesn't need removing.
+        // 如果任务的所有者 ID 为`None`,则它不属于任何列表的一部分,不需要删除.
         let task_id = task.header().get_owner_id()?;
 
         assert_eq!(task_id, self.id);
@@ -203,6 +222,10 @@ impl<S: 'static> OwnedTasks<S> {
     ///
     /// Due to the above reasons, we set a maximum value for the shared list size,
     /// denoted as `MAX_SHARED_LIST_SIZE`.
+    /// 根据工作线程数生成分片列表的大小.
+    /// 分片锁设计可以有效缓解高并发带来的锁争用性能问题.
+    /// 但是随着分片数量的增加,侵入式链表中节点之间的内存连续性会降低.此外,分片数量的增加也会增加分片列表的构建时间.
+    /// 鉴于上述原因,我们为共享列表大小设置了一个最大值,记为 `MAX_SHARED_LIST_SIZE`.
     fn gen_shared_list_size(num_cores: usize) -> usize {
         const MAX_SHARED_LIST_SIZE: usize = 1 << 16;
         usize::min(MAX_SHARED_LIST_SIZE, num_cores.next_power_of_two() * 4)
@@ -212,6 +235,7 @@ impl<S: 'static> OwnedTasks<S> {
 cfg_taskdump! {
     impl<S: 'static> OwnedTasks<S> {
         /// Locks the tasks, and calls `f` on an iterator over them.
+        /// 锁定任务,并在其迭代器上调用`f`.
         pub(crate) fn for_each<F>(&self, f: F)
         where
             F: FnMut(&Task<S>),

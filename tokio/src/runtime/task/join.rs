@@ -153,6 +153,7 @@ cfg_rt! {
     /// [`task::spawn_blocking`]: crate::task::spawn_blocking
     /// [`std::thread::JoinHandle`]: std::thread::JoinHandle
     /// [`JoinError`]: crate::task::JoinError
+    /// JoinHandle被drop后, 任务依然会执行
     pub struct JoinHandle<T> {
         raw: RawTask,
         _p: PhantomData<T>,
@@ -217,6 +218,11 @@ impl<T> JoinHandle<T> {
     /// [cancelled]: method@super::error::JoinError::is_cancelled
     /// [the module level docs]: crate::task#cancellation
     /// [`spawn_blocking`]: crate::task::spawn_blocking
+    /// 中止与句柄关联的任务.
+    ///
+    /// 如果任务在取消时已经完成,则等待取消的任务可能会照常完成,但很可能它会失败并出现 [cancelled] `JoinError`.
+    /// 请注意,使用 [`spawn_blocking`] 生成的任务无法中止,因为它们不是异步的.如果您在 `spawn_blocking`
+    /// 任务上调用 `abort`,则这 *不会产生任何影响*,并且任务将继续正常运行.例外情况是如果任务尚未开始运行;在这种情况下,调用 `abort` 可能会阻止任务启动.
     pub fn abort(&self) {
         self.raw.remote_abort();
     }
@@ -248,12 +254,14 @@ impl<T> JoinHandle<T> {
     /// # }
     /// ```
     /// [`abort`]: method@JoinHandle::abort
+    /// 检查与此`JoinHandle`相关的任务是否已完成.
     pub fn is_finished(&self) -> bool {
         let state = self.raw.header().state.load();
         state.is_complete()
     }
 
     /// Set the waker that is notified when the task completes.
+    /// 设置任务完成时通知的唤醒器.
     pub(crate) fn set_join_waker(&mut self, waker: &Waker) {
         if self.raw.try_set_join_waker(waker) {
             // In this case the task has already completed. We wake the waker immediately.
@@ -296,6 +304,7 @@ impl<T> JoinHandle<T> {
     /// # }
     /// ```
     /// [cancelled]: method@super::error::JoinError::is_cancelled
+    /// 返回一个新的`AbortHandle`,可用于远程中止此任务.
     #[must_use = "abort handles do nothing unless `.abort` is called"]
     pub fn abort_handle(&self) -> super::AbortHandle {
         self.raw.ref_inc();
@@ -329,6 +338,7 @@ impl<T> Future for JoinHandle<T> {
         let mut ret = Poll::Pending;
 
         // Keep track of task budget
+        // 跟踪任务预算
         let coop = ready!(crate::runtime::coop::poll_proceed(cx));
 
         // Try to read the task output. If the task is not yet complete, the
@@ -342,6 +352,9 @@ impl<T> Future for JoinHandle<T> {
         // Safety:
         //
         // The type of `T` must match the task's output type.
+        // 尝试读取任务输出.如果任务尚未完成,则存储唤醒程序,并在任务完成后通知唤醒程序.
+        // 该函数必须通过 vtable,这需要擦除通用类型.为此,函数`return`在调用函数之前放置在堆栈上,并使用 `*mut ()` 传递到函数中.
+        // `T` 的类型必须与任务的输出类型匹配.
         unsafe {
             self.raw
                 .try_read_output(&mut ret as *mut _ as *mut (), cx.waker());
@@ -357,6 +370,7 @@ impl<T> Future for JoinHandle<T> {
 
 impl<T> Drop for JoinHandle<T> {
     fn drop(&mut self) {
+        // 任务创建后,立即drop
         if self.raw.state().drop_join_handle_fast().is_ok() {
             return;
         }

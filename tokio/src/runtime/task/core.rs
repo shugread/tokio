@@ -114,12 +114,15 @@ use std::task::{Context, Poll, Waker};
 #[repr(C)]
 pub(super) struct Cell<T: Future, S> {
     /// Hot task state data
+    /// 任务状态数据
     pub(super) header: Header,
 
     /// Either the future or output, depending on the execution stage.
+    /// Future或输出,取决于执行阶段.
     pub(super) core: Core<T, S>,
 
     /// Cold data
+    /// 冷数据
     pub(super) trailer: Trailer,
 }
 
@@ -133,28 +136,36 @@ pub(super) struct CoreStage<T: Future> {
 ///
 /// Any changes to the layout of this struct _must_ also be reflected in the
 /// `const` fns in raw.rs.
+/// Future或输出,取决于执行阶段.
 #[repr(C)]
 pub(super) struct Core<T: Future, S> {
     /// Scheduler used to drive this future.
+    /// 调度程序用于推动这个Future.
     pub(super) scheduler: S,
 
     /// The task's ID, used for populating `JoinError`s.
+    /// 任务Id
     pub(super) task_id: Id,
 
     /// Either the future or the output.
+    /// Future或者输出
     pub(super) stage: CoreStage<T>,
 }
 
 /// Crate public as this is also needed by the pool.
+/// 任务头
 #[repr(C)]
 pub(crate) struct Header {
     /// Task state.
+    /// 任务状态
     pub(super) state: State,
 
     /// Pointer to next task, used with the injection queue.
+    /// 下一个任务, inject queue中使用
     pub(super) queue_next: UnsafeCell<Option<NonNull<Header>>>,
 
     /// Table of function pointers for executing actions on the task.
+    /// 函数指针表
     pub(super) vtable: &'static Vtable,
 
     /// This integer contains the id of the `OwnedTasks` or `LocalOwnedTasks`
@@ -168,6 +179,7 @@ pub(crate) struct Header {
     /// The id is not unset when removed from a list because we want to be able
     /// to read the id without synchronization, even if it is concurrently being
     /// removed from the list.
+    /// 所有者id
     pub(super) owner_id: UnsafeCell<Option<NonZeroU64>>,
 
     /// The tracing ID for this instrumented task.
