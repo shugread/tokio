@@ -5,6 +5,7 @@
 
 use crate::runtime::task;
 
+/// 任务队列
 pub(crate) struct Synced {
     /// True if the queue is closed.
     pub(super) is_closed: bool,
@@ -20,6 +21,7 @@ unsafe impl Send for Synced {}
 unsafe impl Sync for Synced {}
 
 impl Synced {
+    // 弹出任务
     pub(super) fn pop<T: 'static>(&mut self) -> Option<task::Notified<T>> {
         let task = self.head?;
 

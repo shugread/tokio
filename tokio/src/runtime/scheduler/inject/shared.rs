@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering::{Acquire, Release};
 pub(crate) struct Shared<T: 'static> {
     /// Number of pending tasks in the queue. This helps prevent unnecessary
     /// locking in the hot path.
+    /// 任务队列长度
     pub(super) len: AtomicUsize,
 
     _p: PhantomData<T>,
@@ -65,6 +66,7 @@ impl<T: 'static> Shared<T> {
     /// # Safety
     ///
     /// Must be called with the same `Synced` instance returned by `Inject::new`
+    /// 将任务添加到synced中
     pub(crate) unsafe fn push(&self, synced: &mut Synced, task: task::Notified<T>) {
         if synced.is_closed {
             return;
@@ -77,6 +79,7 @@ impl<T: 'static> Shared<T> {
         // The next pointer should already be null
         debug_assert!(unsafe { task.get_queue_next().is_none() });
 
+        // 添加到链表尾部
         if let Some(tail) = synced.tail {
             // safety: Holding the Notified for a task guarantees exclusive
             // access to the `queue_next` field.
@@ -94,6 +97,7 @@ impl<T: 'static> Shared<T> {
     /// # Safety
     ///
     /// Must be called with the same `Synced` instance returned by `Inject::new`
+    /// 弹出一个任务
     pub(crate) unsafe fn pop(&self, synced: &mut Synced) -> Option<task::Notified<T>> {
         self.pop_n(synced, 1).next()
     }
@@ -103,6 +107,7 @@ impl<T: 'static> Shared<T> {
     /// # Safety
     ///
     /// Must be called with the same `Synced` instance returned by `Inject::new`
+    /// 弹出多个任务
     pub(crate) unsafe fn pop_n<'a>(&'a self, synced: &'a mut Synced, n: usize) -> Pop<'a, T> {
         use std::cmp;
 
@@ -110,6 +115,7 @@ impl<T: 'static> Shared<T> {
 
         // safety: All updates to the len atomic are guarded by the mutex. As
         // such, a non-atomic load followed by a store is safe.
+        // 最多能弹出的任务数量
         let len = self.len.unsync_load();
         let n = cmp::min(n, len);
 

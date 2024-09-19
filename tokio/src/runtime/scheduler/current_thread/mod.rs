@@ -23,102 +23,131 @@ use std::time::Duration;
 use std::{fmt, thread};
 
 /// Executes tasks on the current thread
+/// 当前线程上执行任务
 pub(crate) struct CurrentThread {
     /// Core scheduler data is acquired by a thread entering `block_on`.
+    /// 核心调度数据,存储了调度器的内部状态和任务队列
     core: AtomicCell<Core>,
 
     /// Notifier for waking up other threads to steal the
     /// driver.
+    /// 用于通知其他线程或任务有新的事件需要处理
     notify: Notify,
 }
 
 /// Handle to the current thread scheduler
+/// 对当前线程调度器的句柄
 pub(crate) struct Handle {
     /// Scheduler state shared across threads
+    /// 调度器的共享状态,在多个线程之间共享
     shared: Shared,
 
     /// Resource driver handles
+    /// 资源驱动器句柄,负责与 I/O 资源,计时器等系统资源进行交互
     pub(crate) driver: driver::Handle,
 
     /// Blocking pool spawner
+    /// 调度阻塞任务的执行器
     pub(crate) blocking_spawner: blocking::Spawner,
 
     /// Current random number generator seed
+    /// 当前的随机数生成器种子, 用于调度器的任务选择和调度策略
     pub(crate) seed_generator: RngSeedGenerator,
 
     /// User-supplied hooks to invoke for things
+    /// 用户提供的任务钩子
     pub(crate) task_hooks: TaskHooks,
 }
 
 /// Data required for executing the scheduler. The struct is passed around to
 /// a function that will perform the scheduling work and acts as a capability token.
+/// 调度器的运行数据
 struct Core {
     /// Scheduler run queue
+    /// 调度器的任务队列
     tasks: VecDeque<Notified>,
 
     /// Current tick
+    /// 用于跟踪调度周期
     tick: u32,
 
     /// Runtime driver
     ///
     /// The driver is removed before starting to park the thread
+    /// 运行时驱动器,用于与 I/O,计时器等系统资源交互.
     driver: Option<Driver>,
 
     /// Metrics batch
+    /// 收集调度器的执行性能指标
     metrics: MetricsBatch,
 
     /// How often to check the global queue
+    /// 检查全局队列的时间间隔
     global_queue_interval: u32,
 
     /// True if a task panicked without being handled and the runtime is
     /// configured to shutdown on unhandled panic.
+    /// 是否有未处理的任务恐慌
     unhandled_panic: bool,
 }
 
 /// Scheduler state shared between threads.
+/// 多个线程之间共享的调度器状态
 struct Shared {
     /// Remote run queue
+    /// 向调度器注入新任务的注入队列
     inject: Inject<Arc<Handle>>,
 
     /// Collection of all active tasks spawned onto this executor.
+    /// 调度器当前拥有的任务集合
     owned: OwnedTasks<Arc<Handle>>,
 
     /// Indicates whether the blocked on thread was woken.
+    /// 当前阻塞的线程是否被唤醒
     woken: AtomicBool,
 
     /// Scheduler configuration options
+    /// 调度器的配置选项
     config: Config,
 
     /// Keeps track of various runtime metrics.
+    /// 跟踪调度器的各种度量指标
     scheduler_metrics: SchedulerMetrics,
 
     /// This scheduler only has one worker.
+    /// 跟踪当前线程的工作情况
     worker_metrics: WorkerMetrics,
 }
 
 /// Thread-local context.
 ///
 /// pub(crate) to store in `runtime::context`.
+/// 线程本地的上下文
 pub(crate) struct Context {
     /// Scheduler handle
+    /// 调度器的句柄
     handle: Arc<Handle>,
 
     /// Scheduler core, enabling the holder of `Context` to execute the
     /// scheduler.
+    /// 调度器的核心数据
     core: RefCell<Option<Box<Core>>>,
 
     /// Deferred tasks, usually ones that called `task::yield_now()`.
+    /// 存储被延迟执行的任务, 例如那些调用了 `task::yield_now()` 的任务
     pub(crate) defer: Defer,
 }
 
 type Notified = task::Notified<Arc<Handle>>;
 
 /// Initial queue capacity.
+/// 初始化队列容量
 const INITIAL_CAPACITY: usize = 64;
 
 /// Used if none is specified. This is a temporary constant and will be removed
 /// as we unify tuning logic between the multi-thread and current-thread
 /// schedulers.
+/// 默认检查全局队列的时间间隔
 const DEFAULT_GLOBAL_QUEUE_INTERVAL: u32 = 31;
 
 impl CurrentThread {
@@ -172,6 +201,7 @@ impl CurrentThread {
         (scheduler, handle)
     }
 
+    /// 阻塞运行任务
     #[track_caller]
     pub(crate) fn block_on<F: Future>(&self, handle: &scheduler::Handle, future: F) -> F::Output {
         pin!(future);
@@ -184,6 +214,7 @@ impl CurrentThread {
             // available or the future is complete.
             loop {
                 if let Some(core) = self.take_core(handle) {
+                    // 获取core, 阻塞执行
                     handle
                         .shared
                         .worker_metrics
@@ -195,10 +226,12 @@ impl CurrentThread {
 
                     if let Some(out) = blocking
                         .block_on(poll_fn(|cx| {
+                            // 轮询notified完成, 继续循环,获取core
                             if notified.as_mut().poll(cx).is_ready() {
                                 return Ready(None);
                             }
 
+                            // 如果notified为完成, 轮询future
                             if let Ready(out) = future.as_mut().poll(cx) {
                                 return Ready(Some(out));
                             }
@@ -214,6 +247,7 @@ impl CurrentThread {
         })
     }
 
+    // 获取core
     fn take_core(&self, handle: &Arc<Handle>) -> Option<CoreGuard<'_>> {
         let core = self.core.take()?;
 
@@ -240,6 +274,7 @@ impl CurrentThread {
         };
 
         // Check that the thread-local is not being destroyed
+        // 检查线程本地是否被破坏
         let tls_available = context::with_current(|_| ()).is_ok();
 
         if tls_available {
@@ -251,6 +286,7 @@ impl CurrentThread {
             // Shutdown without setting the context. `tokio::spawn` calls will
             // fail, but those will fail either way because the thread-local is
             // not available anymore.
+            // 关闭而不设置上下文
             let context = core.context.expect_current_thread();
             let core = context.core.borrow_mut().take().unwrap();
 
@@ -303,12 +339,15 @@ impl fmt::Debug for CurrentThread {
 
 impl Core {
     /// Get and increment the current tick
+    /// 增加tick
     fn tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
     }
 
+    // 获取下一个任务
     fn next_task(&mut self, handle: &Handle) -> Option<Notified> {
         if self.tick % self.global_queue_interval == 0 {
+            // 获取远程任务
             handle
                 .next_remote_task()
                 .or_else(|| self.next_local_task(handle))
@@ -363,6 +402,7 @@ impl Context {
 
     /// Blocks the current thread until an event is received by the driver,
     /// including I/O events, timer events, ...
+    /// 阻塞当前线程直到驱动程序收到事件
     fn park(&self, mut core: Box<Core>, handle: &Handle) -> Box<Core> {
         let mut driver = core.driver.take().expect("driver missing");
 
@@ -399,6 +439,7 @@ impl Context {
     }
 
     /// Checks the driver for new events without blocking the thread.
+    /// 检查驱动程序是否有新事件,但不阻塞线程.
     fn park_yield(&self, mut core: Box<Core>, handle: &Handle) -> Box<Core> {
         let mut driver = core.driver.take().expect("driver missing");
 
@@ -413,6 +454,7 @@ impl Context {
         core
     }
 
+    // 确保调度器核心能够在当前线程上下文中使用
     fn enter<R>(&self, core: Box<Core>, f: impl FnOnce() -> R) -> (Box<Core>, R) {
         // Store the scheduler core in the thread-local context
         //
@@ -436,6 +478,7 @@ impl Context {
 
 impl Handle {
     /// Spawns a future onto the `CurrentThread` scheduler
+    /// 调度Future
     pub(crate) fn spawn<F>(
         me: &Arc<Self>,
         future: F,
@@ -445,6 +488,7 @@ impl Handle {
         F: crate::future::Future + Send + 'static,
         F::Output: Send + 'static,
     {
+        // 创建并保存任务
         let (handle, notified) = me.shared.owned.bind(future, me.clone(), id);
 
         me.task_hooks.spawn(&TaskMeta {
@@ -590,9 +634,11 @@ impl fmt::Debug for Handle {
 
 impl Schedule for Arc<Handle> {
     fn release(&self, task: &Task<Self>) -> Option<Task<Self>> {
+        // 移除任务
         self.shared.owned.remove(task)
     }
 
+    // 调度任务
     fn schedule(&self, task: task::Notified<Self>) {
         use scheduler::Context::CurrentThread;
 
@@ -611,6 +657,7 @@ impl Schedule for Arc<Handle> {
                 self.shared.scheduler_metrics.inc_remote_schedule_count();
 
                 // Schedule the task
+                // 任务放入inject队列
                 self.shared.inject.push(task);
                 self.driver.unpark();
             }
@@ -672,12 +719,14 @@ impl Wake for Handle {
 
 /// Used to ensure we always place the `Core` value back into its slot in
 /// `CurrentThread`, even if the future panics.
+/// 确保 Core 在调度期间不会被其他线程抢占
 struct CoreGuard<'a> {
     context: scheduler::Context,
     scheduler: &'a CurrentThread,
 }
 
 impl CoreGuard<'_> {
+    /// 阻塞执行任务
     #[track_caller]
     fn block_on<F: Future>(self, future: F) -> F::Output {
         let ret = self.enter(|mut core, context| {
@@ -688,6 +737,7 @@ impl CoreGuard<'_> {
 
             core.metrics.start_processing_scheduled_tasks();
 
+            // 调度器会不断尝试执行任务
             'outer: loop {
                 let handle = &context.handle;
 
@@ -699,18 +749,22 @@ impl CoreGuard<'_> {
                     core = c;
 
                     if let Ready(v) = res {
+                        // future完成
                         return (core, Some(v));
                     }
                 }
 
                 for _ in 0..handle.shared.config.event_interval {
                     // Make sure we didn't hit an unhandled_panic
+                    // 确保我们没有遇到 unhandled_panic
                     if core.unhandled_panic {
                         return (core, None);
                     }
 
+                    // 增加tick
                     core.tick();
 
+                    // 获取任务
                     let entry = core.next_task(handle);
 
                     let task = match entry {
@@ -721,12 +775,14 @@ impl CoreGuard<'_> {
                             core = if !context.defer.is_empty() {
                                 context.park_yield(core, handle)
                             } else {
+                                // 线程休眠
                                 context.park(core, handle)
                             };
 
                             core.metrics.start_processing_scheduled_tasks();
 
                             // Try polling the `block_on` future next
+                            // 继续下一次循环
                             continue 'outer;
                         }
                     };
@@ -734,6 +790,7 @@ impl CoreGuard<'_> {
                     let task = context.handle.shared.owned.assert_owner(task);
 
                     let (c, ()) = context.run_task(core, || {
+                        // 执行任务
                         task.run();
                     });
 

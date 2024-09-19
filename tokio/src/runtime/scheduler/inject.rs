@@ -22,8 +22,12 @@ cfg_unstable_metrics! {
 
 /// Growable, MPMC queue used to inject new tasks into the scheduler and as an
 /// overflow queue when the local, fixed-size, array queue overflows.
+/// 可增长的 MPMC 队列用于将新任务注入调度程序,
+/// 并在本地固定大小数组队列溢出时作为溢出队列.
 pub(crate) struct Inject<T: 'static> {
+    // 负责存储实际的任务队列和管理队列的核心逻辑
     shared: Shared<T>,
+    // 用于保护同步的 Synced 状态,保证在多线程环境下对共享队列的访问是安全的.
     synced: Mutex<Synced>,
 }
 
@@ -46,6 +50,7 @@ impl<T: 'static> Inject<T> {
 
     /// Closes the injection queue, returns `true` if the queue is open when the
     /// transition is made.
+    /// 关闭注入队列,如果在进行转换时队列处于打开状态,则返回`true`.
     pub(crate) fn close(&self) -> bool {
         let mut synced = self.synced.lock();
         self.shared.close(&mut synced)
@@ -54,12 +59,14 @@ impl<T: 'static> Inject<T> {
     /// Pushes a value into the queue.
     ///
     /// This does nothing if the queue is closed.
+    /// 将任务压入队列
     pub(crate) fn push(&self, task: task::Notified<T>) {
         let mut synced = self.synced.lock();
         // safety: passing correct `Synced`
         unsafe { self.shared.push(&mut synced, task) }
     }
 
+    // 从队列获取任务
     pub(crate) fn pop(&self) -> Option<task::Notified<T>> {
         if self.shared.is_empty() {
             return None;

@@ -25,6 +25,7 @@ impl<T: 'static> Shared<T> {
     /// # Safety
     ///
     /// Must be called with the same `Synced` instance returned by `Inject::new`
+    /// 将几个值推入队列.
     #[inline]
     pub(crate) unsafe fn push_batch<L, I>(&self, shared: L, mut iter: I)
     where
@@ -55,6 +56,7 @@ impl<T: 'static> Shared<T> {
 
         // Now that the tasks are linked together, insert them into the
         // linked list.
+        // 将任务链插入队列
         self.push_batch_inner(shared, first, prev, counter);
     }
 
@@ -84,6 +86,7 @@ impl<T: 'static> Shared<T> {
             while let Some(task) = curr {
                 curr = task.get_queue_next();
 
+                // 消耗引用计数
                 let _ = unsafe { task::Notified::<T>::from_raw(task) };
             }
 
