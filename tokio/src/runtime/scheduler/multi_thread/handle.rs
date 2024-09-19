@@ -17,25 +17,32 @@ cfg_taskdump! {
 }
 
 /// Handle to the multi thread scheduler
+/// 多线程调度器句柄
 pub(crate) struct Handle {
     /// Task spawner
+    /// woker共享数据
     pub(super) shared: worker::Shared,
 
     /// Resource driver handles
+    /// 资源驱动器的句柄,用于与系统 I/O,定时器等资源交互.
     pub(crate) driver: driver::Handle,
 
     /// Blocking pool spawner
+    /// 阻塞任务的生成器,管理阻塞任务的执行.
     pub(crate) blocking_spawner: blocking::Spawner,
 
     /// Current random number generator seed
+    /// 当前的随机数生成器种子
     pub(crate) seed_generator: RngSeedGenerator,
 
     /// User-supplied hooks to invoke for things
+    /// 用户提供的任务钩子
     pub(crate) task_hooks: TaskHooks,
 }
 
 impl Handle {
     /// Spawns a future onto the thread pool
+    /// 将Future加入线程池
     pub(crate) fn spawn<F>(me: &Arc<Self>, future: F, id: task::Id) -> JoinHandle<F::Output>
     where
         F: crate::future::Future + Send + 'static,
@@ -53,6 +60,7 @@ impl Handle {
         T: Future + Send + 'static,
         T::Output: Send + 'static,
     {
+        // 绑定任务
         let (handle, notified) = me.shared.owned.bind(future, me.clone(), id);
 
         me.task_hooks.spawn(&TaskMeta {
@@ -61,6 +69,7 @@ impl Handle {
             _phantom: Default::default(),
         });
 
+        // 将任务加入调度队列
         me.schedule_option_task_without_yield(notified);
 
         handle

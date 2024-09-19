@@ -26,11 +26,13 @@ cfg_not_has_atomic_u64! {
 }
 
 /// Producer handle. May only be used from a single thread.
+/// 生产者句柄.只能在单个线程中使用.
 pub(crate) struct Local<T: 'static> {
     inner: Arc<Inner<T>>,
 }
 
 /// Consumer handle. May be used from many threads.
+/// 消费者句柄,可由多个线程使用.
 pub(crate) struct Steal<T: 'static>(Arc<Inner<T>>);
 
 pub(crate) struct Inner<T: 'static> {
@@ -47,12 +49,17 @@ pub(crate) struct Inner<T: 'static> {
     /// stealer.
     ///
     /// Tracking an in-progress stealer prevents a wrapping scenario.
+    /// 包含两个 `UnsignedShort` 值
+    /// 该字段的最低位(LSB,最低字节)用于表示队列的实际头部(即下一个任务)
+    /// 最高位(MSB,最高字节)则被用于追踪当前正在被窃取的任务批次中的第一个任务
     head: AtomicUnsignedLong,
 
     /// Only updated by producer thread but read by many threads.
+    /// 表示任务队列的尾部索引
     tail: AtomicUnsignedShort,
 
     /// Elements
+    /// 是实际存储任务的环形缓冲区
     buffer: Box<[UnsafeCell<MaybeUninit<task::Notified<T>>>; LOCAL_QUEUE_CAPACITY]>,
 }
 
@@ -82,6 +89,7 @@ fn make_fixed_size<T>(buffer: Box<[T]>) -> Box<[T; LOCAL_QUEUE_CAPACITY]> {
 }
 
 /// Create a new local run-queue
+/// 创建一个新的本地运行队列
 pub(crate) fn local<T: 'static>() -> (Steal<T>, Local<T>) {
     let mut buffer = Vec::with_capacity(LOCAL_QUEUE_CAPACITY);
 
@@ -106,11 +114,13 @@ pub(crate) fn local<T: 'static>() -> (Steal<T>, Local<T>) {
 
 impl<T> Local<T> {
     /// Returns the number of entries in the queue
+    /// 返回队列中的任务数
     pub(crate) fn len(&self) -> usize {
         self.inner.len() as usize
     }
 
     /// How many tasks can be pushed into the queue
+    /// 最多可以推送多少个任务到队列中
     pub(crate) fn remaining_slots(&self) -> usize {
         self.inner.remaining_slots()
     }
@@ -123,6 +133,7 @@ impl<T> Local<T> {
     ///
     /// Separate to `is_stealable` so that refactors of `is_stealable` to "protect"
     /// some tasks from stealing won't affect this
+    /// 如果队列中有任何条目,则返回 false
     pub(crate) fn has_tasks(&self) -> bool {
         !self.inner.is_empty()
     }
@@ -133,6 +144,8 @@ impl<T> Local<T> {
     /// # Panics
     ///
     /// The method panics if there is not enough capacity to fit in the queue.
+    /// 将一批任务推到队列后面.所有任务都必须适合本地队列.
+    /// 如果队列容量不足,该方法将发生 panic.
     pub(crate) fn push_back(&mut self, tasks: impl ExactSizeIterator<Item = task::Notified<T>>) {
         let len = tasks.len();
         assert!(len <= LOCAL_QUEUE_CAPACITY);
@@ -148,6 +161,7 @@ impl<T> Local<T> {
         // safety: this is the **only** thread that updates this cell.
         let mut tail = unsafe { self.inner.tail.unsync_load() };
 
+        // 任务不超过容量
         if tail.wrapping_sub(steal) <= (LOCAL_QUEUE_CAPACITY - len) as UnsignedShort {
             // Yes, this if condition is structured a bit weird (first block
             // does nothing, second returns an error). It is this way to match
@@ -165,6 +179,7 @@ impl<T> Local<T> {
                 // Safety: There is only one producer and the above `if`
                 // condition ensures we don't touch a cell if there is a
                 // value, thus no consumer.
+                // 将任务加入槽内
                 unsafe {
                     ptr::write((*ptr).as_mut_ptr(), task);
                 }
@@ -182,6 +197,9 @@ impl<T> Local<T> {
     /// When the queue overflows, half of the current contents of the queue is
     /// moved to the given Injection queue. This frees up capacity for more
     /// tasks to be pushed into the local queue.
+    /// 将任务推送到本地队列的后面,如果队列中没有足够的容量,则会触发溢出操作.
+    /// 当队列溢出时,队列中当前内容的一半将移动到给定的注入队列.
+    /// 这样可以释放容量,以便将更多任务推送到本地队列.
     pub(crate) fn push_back_or_overflow<O: Overflow<T>>(
         &mut self,
         mut task: task::Notified<T>,
@@ -197,15 +215,18 @@ impl<T> Local<T> {
 
             if tail.wrapping_sub(steal) < LOCAL_QUEUE_CAPACITY as UnsignedShort {
                 // There is capacity for the task
+                // 不会溢出
                 break tail;
             } else if steal != real {
                 // Concurrently stealing, this will free up capacity, so only
                 // push the task onto the inject queue
+                // 并发窃取,这将释放容量,因此只需将任务推送到注入队列即可
                 overflow.push(task);
                 return;
             } else {
                 // Push the current task and half of the queue into the
                 // inject queue.
+                // 将当前任务和队列的一半推送到注入队列中.
                 match self.push_overflow(task, real, tail, overflow, stats) {
                     Ok(_) => return,
                     // Lost the race, try again
@@ -246,6 +267,7 @@ impl<T> Local<T> {
     /// Once `push_overflow` is done, a notification is sent out, so if other
     /// workers "missed" some of the tasks during a steal, they will get
     /// another opportunity.
+    /// 将一批任务移入注入队列.
     #[inline(never)]
     fn push_overflow<O: Overflow<T>>(
         &mut self,
@@ -302,6 +324,7 @@ impl<T> Local<T> {
         }
 
         /// An iterator that takes elements out of the run queue.
+        /// 从本地任务队列中批量取出任务
         struct BatchTaskIter<'a, T: 'static> {
             buffer: &'a [UnsafeCell<MaybeUninit<task::Notified<T>>>; LOCAL_QUEUE_CAPACITY],
             head: UnsignedLong,
@@ -335,6 +358,7 @@ impl<T> Local<T> {
             head: head as UnsignedLong,
             i: 0,
         };
+        // 本地队列中取出的任务与当前 task 合并
         overflow.push_batch(batch_iter.chain(std::iter::once(task)));
 
         // Add 1 to factor in the task currently being scheduled.
@@ -344,6 +368,7 @@ impl<T> Local<T> {
     }
 
     /// Pops a task from the local queue.
+    /// 从本地队列弹出一个任务.
     pub(crate) fn pop(&mut self) -> Option<task::Notified<T>> {
         let mut head = self.inner.head.load(Acquire);
 
@@ -362,6 +387,7 @@ impl<T> Local<T> {
 
             // If `steal == real` there are no concurrent stealers. Both `steal`
             // and `real` are updated.
+            // 如果 `steal == real`,则没有并发窃取者.`steal` 和 `real` 都会更新.
             let next = if steal == real {
                 pack(next_real, next_real)
             } else {
@@ -370,6 +396,7 @@ impl<T> Local<T> {
             };
 
             // Attempt to claim a task.
+            // 尝试领取一项任务.
             let res = self
                 .inner
                 .head
@@ -391,6 +418,7 @@ impl<T> Steal<T> {
     }
 
     /// Steals half the tasks from self and place them into `dst`.
+    /// 从自身窃取一半的任务并将其放入`dst`中.
     pub(crate) fn steal_into(
         &self,
         dst: &mut Local<T>,
@@ -405,6 +433,7 @@ impl<T> Steal<T> {
         // from `dst` there may not be enough capacity to steal.
         let (steal, _) = unpack(dst.inner.head.load(Acquire));
 
+        //
         if dst_tail.wrapping_sub(steal) > LOCAL_QUEUE_CAPACITY as UnsignedShort / 2 {
             // we *could* try to steal less here, but for simplicity, we're just
             // going to abort.
@@ -446,6 +475,7 @@ impl<T> Steal<T> {
 
     // Steal tasks from `self`, placing them into `dst`. Returns the number of
     // tasks that were stolen.
+    // 从`self`窃取任务,并将其放入`dst`.返回被窃取的任务数量.
     fn steal_into2(&self, dst: &mut Local<T>, dst_tail: UnsignedShort) -> UnsignedShort {
         let mut prev_packed = self.0.head.load(Acquire);
         let mut next_packed;
@@ -456,20 +486,25 @@ impl<T> Steal<T> {
 
             // If these two do not match, another thread is concurrently
             // stealing from the queue.
+            // 如果这两者不匹配,则另一个线程正在同时从队列中窃取.
             if src_head_steal != src_head_real {
                 return 0;
             }
 
             // Number of available tasks to steal
+            // 可窃取的任务数量
             let n = src_tail.wrapping_sub(src_head_real);
+            // 取一半
             let n = n - n / 2;
 
             if n == 0 {
                 // No tasks available to steal
+                // 没有任务可以窃取
                 return 0;
             }
 
             // Update the real head index to acquire the tasks.
+            //  更新真实的头部索引以获取任务.
             let steal_to = src_head_real.wrapping_add(n);
             assert_ne!(src_head_steal, steal_to);
             next_packed = pack(src_head_steal, steal_to);
@@ -509,12 +544,14 @@ impl<T> Steal<T> {
             // Read the task
             //
             // safety: We acquired the task with the atomic exchange above.
+            // 读取任务
             let task = self.0.buffer[src_idx].with(|ptr| unsafe { ptr::read((*ptr).as_ptr()) });
 
             // Write the task to the new slot
             //
             // safety: `dst` queue is empty and we are the only producer to
             // this queue.
+            // 将任务写入到dst
             dst.inner.buffer[dst_idx]
                 .with_mut(|ptr| unsafe { ptr::write((*ptr).as_mut_ptr(), task) });
         }
@@ -523,6 +560,7 @@ impl<T> Steal<T> {
 
         // Update `src_head_steal` to match `src_head_real` signalling that the
         // stealing routine is complete.
+        // 更新 `src_head_steal` 以匹配 `src_head_real`,表示窃取程序已完成.
         loop {
             let head = unpack(prev_packed).1;
             next_packed = pack(head, head);
@@ -591,7 +629,9 @@ impl<T> Inner<T> {
 /// Split the head value into the real head and the index a stealer is working
 /// on.
 fn unpack(n: UnsignedLong) -> (UnsignedShort, UnsignedShort) {
+    // 提取出 n 的低位部分,表示实际头部索引
     let real = n & UnsignedShort::MAX as UnsignedLong;
+    // 提取出 n 的高位部分,表示窃取者的索引
     let steal = n >> (mem::size_of::<UnsignedShort>() * 8);
 
     (steal as UnsignedShort, real as UnsignedShort)

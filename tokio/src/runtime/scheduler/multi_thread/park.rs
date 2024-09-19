@@ -13,36 +13,45 @@ use std::time::Duration;
 #[cfg(loom)]
 use crate::runtime::park::CURRENT_THREAD_PARK_COUNT;
 
+// 负责阻塞当前线程,直到有任务需要处理或某个超时时间到达
 pub(crate) struct Parker {
     inner: Arc<Inner>,
 }
 
+// 在任务到达时唤醒被阻塞的线程
 pub(crate) struct Unparker {
     inner: Arc<Inner>,
 }
 
+/// Parker和Unparker的共享数据
 struct Inner {
     /// Avoids entering the park if possible
+    /// 状态
     state: AtomicUsize,
 
     /// Used to coordinate access to the driver / `condvar`
+    /// 用于协调对 driver 和 condvar 的访问
     mutex: Mutex<()>,
 
     /// `Condvar` to block on if the driver is unavailable.
+    /// 如果 driver 不可用时,使用 condvar 来阻塞线程
     condvar: Condvar,
 
     /// Resource (I/O, time, ...) driver
+    /// 资源驱动器,例如 I/O 和计时器
     shared: Arc<Shared>,
 }
 
-const EMPTY: usize = 0;
-const PARKED_CONDVAR: usize = 1;
-const PARKED_DRIVER: usize = 2;
-const NOTIFIED: usize = 3;
+const EMPTY: usize = 0; // 线程处于未阻塞状态
+const PARKED_CONDVAR: usize = 1; // 线程正在使用条件变量进行阻塞
+const PARKED_DRIVER: usize = 2; // 线程正在使用驱动器阻塞
+const NOTIFIED: usize = 3; // 线程已经被通知唤醒
 
 /// Shared across multiple Parker handles
+/// 多个 Parker 句柄共享
 struct Shared {
     /// Shared driver. Only one thread at a time can use this
+    /// 共享驱动程序,每次只有一个线程可以使用它
     driver: TryLock<Driver>,
 }
 
@@ -66,10 +75,12 @@ impl Parker {
         }
     }
 
+    // 线程挂起
     pub(crate) fn park(&mut self, handle: &driver::Handle) {
         self.inner.park(handle);
     }
 
+    // 带超时的挂起
     pub(crate) fn park_timeout(&mut self, handle: &driver::Handle, duration: Duration) {
         // Only parking with zero is supported...
         assert_eq!(duration, Duration::from_millis(0));
@@ -91,6 +102,7 @@ impl Parker {
     }
 }
 
+// Parker克隆时, 只有shared的数据共享
 impl Clone for Parker {
     fn clone(&self) -> Parker {
         Parker {
@@ -105,6 +117,7 @@ impl Clone for Parker {
 }
 
 impl Unparker {
+    // 唤醒线程
     pub(crate) fn unpark(&self, driver: &driver::Handle) {
         self.inner.unpark(driver);
     }
@@ -115,6 +128,7 @@ impl Inner {
     fn park(&self, handle: &driver::Handle) {
         // If we were previously notified then we consume this notification and
         // return quickly.
+        // 如果我们之前收到过通知,那么我们就会使用此通知并快速返回.
         if self
             .state
             .compare_exchange(NOTIFIED, EMPTY, SeqCst, SeqCst)
@@ -124,8 +138,10 @@ impl Inner {
         }
 
         if let Some(mut driver) = self.shared.driver.try_lock() {
+            // 使用driver挂起
             self.park_driver(&mut driver, handle);
         } else {
+            // 使用condvar挂起
             self.park_condvar();
         }
     }
@@ -155,6 +171,7 @@ impl Inner {
         }
 
         loop {
+            // condvar挂起
             m = self.condvar.wait(m).unwrap();
 
             if self
@@ -170,6 +187,7 @@ impl Inner {
         }
     }
 
+    // 使用driver挂起
     fn park_driver(&self, driver: &mut Driver, handle: &driver::Handle) {
         match self
             .state
@@ -200,6 +218,7 @@ impl Inner {
         }
     }
 
+    // 唤醒
     fn unpark(&self, driver: &driver::Handle) {
         // To ensure the unparked thread will observe any writes we made before
         // this call, we must perform a release operation that `park` can
@@ -215,6 +234,7 @@ impl Inner {
         }
     }
 
+    // 使用condvar唤醒
     fn unpark_condvar(&self) {
         // There is a period between when the parked thread sets `state` to
         // `PARKED` (or last checked `state` in the case of a spurious wake

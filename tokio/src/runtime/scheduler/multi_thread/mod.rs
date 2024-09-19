@@ -80,6 +80,8 @@ impl MultiThread {
     ///
     /// The future will execute on the current thread, but all spawned tasks
     /// will be executed on the thread pool.
+    /// 阻塞当前线程等待Future完成。
+    /// Future在当前线程上执行，但所有生成的任务都将在线程池上执行。
     pub(crate) fn block_on<F>(&self, handle: &scheduler::Handle, future: F) -> F::Output
     where
         F: Future,

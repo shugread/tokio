@@ -6,25 +6,31 @@ use crate::runtime::scheduler::multi_thread::Shared;
 use std::fmt;
 use std::sync::atomic::Ordering::{self, SeqCst};
 
+/// 管理空闲的工作线程
 pub(super) struct Idle {
     /// Tracks both the number of searching workers and the number of unparked
     /// workers.
     ///
     /// Used as a fast-path to avoid acquiring the lock when needed.
+    /// 跟踪正在搜索任务和未被阻塞的工作线程数量
     state: AtomicUsize,
 
     /// Total number of workers.
+    /// 总的工作线程数量
     num_workers: usize,
 }
 
 /// Data synchronized by the scheduler mutex
 pub(super) struct Synced {
     /// Sleeping workers
+    /// 睡眠中的工作线程列表
     sleepers: Vec<usize>,
 }
 
+// 用于表示未被阻塞的线程数量在 state 中的高 16 位
 const UNPARK_SHIFT: usize = 16;
 const UNPARK_MASK: usize = !SEARCH_MASK;
+// 用于表示正在搜索任务的线程数量,保存在低 16 位
 const SEARCH_MASK: usize = (1 << UNPARK_SHIFT) - 1;
 
 #[derive(Copy, Clone)]
@@ -48,6 +54,8 @@ impl Idle {
 
     /// If there are no workers actively searching, returns the index of a
     /// worker currently sleeping.
+    /// 检查是否有线程正在搜索任务,并决定是否需要唤醒一个睡眠中的线程.
+    /// 返回值:返回需要唤醒的线程索引,或者 None 表示不需要唤醒线程.
     pub(super) fn worker_to_notify(&self, shared: &Shared) -> Option<usize> {
         // If at least one worker is spinning, work being notified will
         // eventually be found. A searching thread will find **some** work and
@@ -72,6 +80,7 @@ impl Idle {
 
         // A worker should be woken up, atomically increment the number of
         // searching workers as well as the number of unparked workers.
+        // 增加唤醒的worker数量
         State::unpark_one(&self.state, 1);
 
         // Get the worker to unpark
@@ -83,6 +92,8 @@ impl Idle {
 
     /// Returns `true` if the worker needs to do a final check for submitted
     /// work.
+    /// 作线程标记为睡眠状态
+    /// 返回一个布尔值,表示线程是否需要进行一次最终检查来查看是否有工作可做.
     pub(super) fn transition_worker_to_parked(
         &self,
         shared: &Shared,
@@ -101,6 +112,7 @@ impl Idle {
         ret
     }
 
+    /// 将一个线程的状态从`空闲`转变为`正在搜索任务`,更新 state 中的搜索线程数量.
     pub(super) fn transition_worker_to_searching(&self) -> bool {
         let state = State::load(&self.state, SeqCst);
         if 2 * state.num_searching() >= self.num_workers {
@@ -118,6 +130,8 @@ impl Idle {
     ///
     /// Returns `true` if this is the final searching worker. The caller
     /// **must** notify a new worker.
+    /// 将线程从`搜索状态`转变为`正在运行`
+    /// 如果这是最后一个搜索任务的线程,返回 true,表示需要通知另一个线程来接替搜索任务.
     pub(super) fn transition_worker_from_searching(&self) -> bool {
         State::dec_num_searching(&self.state)
     }
@@ -126,6 +140,7 @@ impl Idle {
     /// within the worker's park routine.
     ///
     /// Returns `true` if the worker was parked before calling the method.
+    /// 根据线程索引唤醒一个睡眠中的线程
     pub(super) fn unpark_worker_by_id(&self, shared: &Shared, worker_id: usize) -> bool {
         let mut lock = shared.synced.lock();
         let sleepers = &mut lock.idle.sleepers;
@@ -145,6 +160,7 @@ impl Idle {
     }
 
     /// Returns `true` if `worker_id` is contained in the sleep set.
+    /// 判断woker是否挂起
     pub(super) fn is_parked(&self, shared: &Shared, worker_id: usize) -> bool {
         let lock = shared.synced.lock();
         lock.idle.sleepers.contains(&worker_id)
@@ -159,6 +175,7 @@ impl Idle {
 impl State {
     fn new(num_workers: usize) -> State {
         // All workers start in the unparked state
+        // 所有woker的初始化状态都是unparked
         let ret = State(num_workers << UNPARK_SHIFT);
         debug_assert_eq!(num_workers, ret.num_unparked());
         debug_assert_eq!(0, ret.num_searching());

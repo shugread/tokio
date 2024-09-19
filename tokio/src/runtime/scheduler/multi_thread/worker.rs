@@ -88,20 +88,25 @@ cfg_not_taskdump! {
 }
 
 /// A scheduler worker
+/// 调度器的一个工作线程
 pub(super) struct Worker {
     /// Reference to scheduler's handle
+    /// 调度器的句柄,允许工作线程与调度器共享状态进行通信
     handle: Arc<Handle>,
 
     /// Index holding this worker's remote state
+    /// 当前工作线程在调度器中对应的索引
     index: usize,
 
     /// Used to hand-off a worker's core to another thread.
+    /// 工作线程的核心状态, 包含调度任务所需的数据
     core: AtomicCell<Core>,
 }
 
 /// Core data
 struct Core {
     /// Used to schedule bookkeeping tasks every so often.
+    /// 用于调度的计数器
     tick: u32,
 
     /// When a task is scheduled from a worker, it is stored in this slot. The
@@ -109,59 +114,75 @@ struct Core {
     /// queue. This effectively results in the **last** scheduled task to be run
     /// next (LIFO). This is an optimization for improving locality which
     /// benefits message passing patterns and helps to reduce latency.
+    /// 存储最近调度的任务,优化任务执行的局部性.
     lifo_slot: Option<Notified>,
 
     /// When `true`, locally scheduled tasks go to the LIFO slot. When `false`,
     /// they go to the back of the `run_queue`.
+    /// 是否启用 LIFO 调度,控制任务是否被添加到 LIFO 槽中
     lifo_enabled: bool,
 
     /// The worker-local run queue.
+    /// 本地任务队列,用于存储任务,任务优先从本地队列中获取.
     run_queue: queue::Local<Arc<Handle>>,
 
     /// True if the worker is currently searching for more work. Searching
     /// involves attempting to steal from other workers.
+    /// 当前工作线程是否正在搜索任务
     is_searching: bool,
 
     /// True if the scheduler is being shutdown
+    /// 调度器是否正在关闭
     is_shutdown: bool,
 
     /// True if the scheduler is being traced
+    /// 如果正在跟踪调度程序,则为 True
     is_traced: bool,
 
     /// Parker
     ///
     /// Stored in an `Option` as the parker is added / removed to make the
     /// borrow checker happy.
+    /// 当前线程的 parker,用于管理线程的休眠和唤醒
     park: Option<Parker>,
 
     /// Per-worker runtime stats
+    /// 运行状态
     stats: Stats,
 
     /// How often to check the global queue
+    /// 定期检查全局队列的间隔
     global_queue_interval: u32,
 
     /// Fast random number generator.
+    /// 工作线程的本地随机数生成器
     rand: FastRand,
 }
 
 /// State shared across all workers
+/// 所有工作线程共享的状态信息
 pub(crate) struct Shared {
     /// Per-worker remote state. All other workers have access to this and is
     /// how they communicate between each other.
+    /// 其他线程用于与工作线程通信的远程句柄数组
     remotes: Box<[Remote]>,
 
     /// Global task queue used for:
     ///  1. Submit work to the scheduler while **not** currently on a worker thread.
     ///  2. Submit work to the scheduler when a worker run queue is saturated
+    ///  全局任务注入队列,任务可以在不属于任何工作线程的情况下被注入调度器.
     pub(super) inject: inject::Shared<Arc<Handle>>,
 
     /// Coordinates idle workers
+    /// 管理空闲工作线程的状态
     idle: Idle,
 
     /// Collection of all active tasks spawned onto this executor.
+    /// 所有已生成的任务集合
     pub(crate) owned: OwnedTasks<Arc<Handle>>,
 
     /// Data synchronized by the scheduler mutex
+    /// 共享状态
     pub(super) synced: Mutex<Synced>,
 
     /// Cores that have observed the shutdown signal
@@ -169,17 +190,22 @@ pub(crate) struct Shared {
     /// The core is **not** placed back in the worker to avoid it from being
     /// stolen by a thread that was spawned as part of `block_in_place`.
     #[allow(clippy::vec_box)] // we're moving an already-boxed value
+    // 保存已经观察到关闭信号的核心状态
     shutdown_cores: Mutex<Vec<Box<Core>>>,
 
     /// The number of cores that have observed the trace signal.
+    /// 追踪调度器的状态
     pub(super) trace_status: TraceStatus,
 
     /// Scheduler configuration options
+    /// 调度器的配置选项
     config: Config,
 
     /// Collects metrics from the runtime.
+    /// 收集调度器的运行时度量和性能指标
     pub(super) scheduler_metrics: SchedulerMetrics,
 
+    // 每个工作线程的度量信息
     pub(super) worker_metrics: Box<[WorkerMetrics]>,
 
     /// Only held to trigger some code on drop. This is used to get internal
@@ -192,35 +218,44 @@ pub(crate) struct Shared {
 /// Data synchronized by the scheduler mutex
 pub(crate) struct Synced {
     /// Synchronized state for `Idle`.
+    /// 用于管理空闲线程的同步状态
     pub(super) idle: idle::Synced,
 
     /// Synchronized state for `Inject`.
+    /// 用于管理全局任务注入队列的同步状态
     pub(crate) inject: inject::Synced,
 }
 
 /// Used to communicate with a worker from other threads.
+/// 用于与其他线程的工作程序进行通信.
 struct Remote {
     /// Steals tasks from this worker.
+    /// 允许其他工作线程从当前工作线程中窃取任务
     pub(super) steal: queue::Steal<Arc<Handle>>,
 
     /// Unparks the associated worker thread
+    /// 用于唤醒与当前工作线程关联的工作线程
     unpark: Unparker,
 }
 
 /// Thread-local context
 pub(crate) struct Context {
     /// Worker
+    /// 前线程的 Worker 实例
     worker: Arc<Worker>,
 
     /// Core data
+    /// 当前线程的核心状态
     core: RefCell<Option<Box<Core>>>,
 
     /// Tasks to wake after resource drivers are polled. This is mostly to
     /// handle yielded tasks.
+    /// 用于推迟任务执行的任务队列
     pub(crate) defer: Defer,
 }
 
 /// Starts the workers
+/// 开启worker
 pub(crate) struct Launch(Vec<Arc<Worker>>);
 
 /// Running a task may consume the core. If the core is still available when
@@ -257,8 +292,8 @@ pub(super) fn create(
         // 任务队列
         let (steal, run_queue) = queue::local();
 
-        let park = park.clone();
-        let unpark = park.unpark(); // 挂起恢复结构
+        let park = park.clone(); // 挂起
+        let unpark = park.unpark(); // 恢复
         let metrics = WorkerMetrics::from_config(&config);
         let stats = Stats::new(&metrics);
 
@@ -330,6 +365,7 @@ where
     F: FnOnce() -> R,
 {
     // Try to steal the worker core back
+    // 在 block_in_place 执行完毕时恢复线程的工作状态
     struct Reset {
         take_core: bool,
         budget: coop::Budget,
@@ -363,6 +399,7 @@ where
     let mut had_entered = false;
     let mut take_core = false;
 
+    // with_current 函数检查当前是否已经进入了 tokio 运行时
     let setup_result = with_current(|maybe_cx| {
         match (
             crate::runtime::context::current_enter_context(),
@@ -371,6 +408,7 @@ where
             (context::EnterRuntime::Entered { .. }, true) => {
                 // We are on a thread pool runtime thread, so we just need to
                 // set up blocking.
+                // 处于线程池运行时线程中，因此只需要设置阻塞.
                 had_entered = true;
             }
             (
@@ -382,12 +420,14 @@ where
                 // We are on an executor, but _not_ on the thread pool.  That is
                 // _only_ okay if we are in a thread pool runtime's block_on
                 // method:
+                // 我们在执行器上,但不在线程池上.只有当我们在线程池运行时的 block_on 方法中时才可以
                 if allow_block_in_place {
                     had_entered = true;
                     return Ok(());
                 } else {
                     // This probably means we are on the current_thread runtime or in a
                     // LocalSet, where it is _not_ okay to block.
+                    // 这可能意味着我们处于 current_thread 运行时或 LocalSet 中,不适合阻塞.
                     return Err(
                         "can call blocking only when running on the multi-threaded runtime",
                     );
@@ -396,11 +436,13 @@ where
             (context::EnterRuntime::NotEntered, true) => {
                 // This is a nested call to block_in_place (we already exited).
                 // All the necessary setup has already been done.
+                // 这是对 block_in_place 的嵌套调用(我们已经退出).所有必要的设置都已完成.
                 return Ok(());
             }
             (context::EnterRuntime::NotEntered, false) => {
                 // We are outside of the tokio runtime, so blocking is fine.
                 // We can also skip all of the thread pool blocking setup steps.
+                // 在 tokio 运行时之外
                 return Ok(());
             }
         }
@@ -408,6 +450,7 @@ where
         let cx = maybe_cx.expect("no .is_some() == false cases above should lead here");
 
         // Get the worker core. If none is set, then blocking is fine!
+        //  获取工作核心.如果没有设置,则阻塞即可!
         let mut core = match cx.core.borrow_mut().take() {
             Some(core) => core,
             None => return Ok(()),
@@ -416,6 +459,8 @@ where
         // If we heavily call `spawn_blocking`, there might be no available thread to
         // run this core. Except for the task in the lifo_slot, all tasks can be
         // stolen, so we move the task out of the lifo_slot to the run_queue.
+        // 如果我们大量调用 `spawn_blocking`,可能没有可用的线程来运行此核心.
+        // 除了 lifo_slot 中的任务外,所有任务都可以被窃取,因此我们将任务从 lifo_slot 移出到 run_queue.
         if let Some(task) = core.lifo_slot.take() {
             core.run_queue
                 .push_back_or_overflow(task, &*cx.worker.handle, &mut core.stats);
@@ -423,6 +468,7 @@ where
 
         // We are taking the core from the context and sending it to another
         // thread.
+        // 我们正在从上下文中获取核心并将其发送到另一个线程.
         take_core = true;
 
         // The parker should be set here
@@ -439,6 +485,7 @@ where
         //
         // Once the blocking task is done executing, we will attempt to
         // steal the core back.
+        // 一旦阻塞任务执行完毕，我们将尝试窃回核心.
         let worker = cx.worker.clone();
         runtime::spawn_blocking(move || run(worker));
         Ok(())
@@ -493,6 +540,7 @@ fn run(worker: Arc<Worker>) {
 
     // Acquire a core. If this fails, then another thread is running this
     // worker and there is nothing further to do.
+    // 获取核心.如果失败,则另一个线程正在运行此worker,并且无需执行其他操作.
     let core = match worker.core.take() {
         Some(core) => core,
         None => return,
@@ -521,6 +569,7 @@ fn run(worker: Arc<Worker>) {
             // Check if there are any deferred tasks to notify. This can happen when
             // the worker core is lost due to `block_in_place()` being called from
             // within the task.
+            // 检查是否有任何需要通知的延迟任务
             cx.defer.wake();
         });
     });
@@ -530,6 +579,7 @@ impl Context {
     fn run(&self, mut core: Box<Core>) -> RunResult {
         // Reset `lifo_enabled` here in case the core was previously stolen from
         // a task that had the LIFO slot disabled.
+        // 如果核心先前被从禁用了 LIFO 槽的任务中窃取,请在此处重置 `lifo_enabled`.
         self.reset_lifo_enabled(&mut core);
 
         // Start as "processing" tasks as polling tasks from the local queue
@@ -586,11 +636,13 @@ impl Context {
         Err(())
     }
 
+    // 运行任务
     fn run_task(&self, task: Notified, mut core: Box<Core>) -> RunResult {
         let task = self.worker.handle.shared.owned.assert_owner(task);
 
         // Make sure the worker is not in the **searching** state. This enables
         // another idle worker to try to steal work.
+        // 确保core不是searching状态
         core.transition_from_searching(&self.worker);
 
         self.assert_lifo_enabled_is_correct(&core);
@@ -599,9 +651,11 @@ impl Context {
         // tasks under this measurement. In this case, the tasks came from the
         // LIFO slot and are considered part of the current task for scheduling
         // purposes. These tasks inherent the "parent"'s limits.
+        // 测量轮询开始时间
         core.stats.start_poll();
 
         // Make the core available to the runtime context
+        // 使核心可用于运行时上下文
         *self.core.borrow_mut() = Some(core);
 
         // Run the task
@@ -612,9 +666,11 @@ impl Context {
 
             // As long as there is budget remaining and a task exists in the
             // `lifo_slot`, then keep running.
+            // 只要还有预算剩余,并且 `lifo_slot` 中存在任务,则继续运行.
             loop {
                 // Check if we still have the core. If not, the core was stolen
                 // by another worker.
+                // 检查我们是否还拥有核心.如果没有,则核心已被其他worker偷走.
                 let mut core = match self.core.borrow_mut().take() {
                     Some(core) => core,
                     None => {
@@ -626,6 +682,7 @@ impl Context {
                 };
 
                 // Check for a task in the LIFO slot
+                // 检查 LIFO 槽中的任务
                 let task = match core.lifo_slot.take() {
                     Some(task) => task,
                     None => {
@@ -635,6 +692,7 @@ impl Context {
                     }
                 };
 
+                // 没有budget, 结束运行
                 if !coop::has_budget_remaining() {
                     core.stats.end_poll();
 
@@ -652,6 +710,7 @@ impl Context {
                 }
 
                 // Track that we are about to run a task from the LIFO slot.
+                // 跟踪我们即将从 LIFO 槽运行的任务.
                 lifo_polls += 1;
                 super::counters::inc_lifo_schedules();
 
@@ -662,12 +721,14 @@ impl Context {
                 // LIFO slot can cause starvation as these two tasks will
                 // repeatedly schedule the other. To mitigate this, we limit the
                 // number of times the LIFO slot is prioritized.
+                // 如果达到限制,则禁用 LIFO 槽
                 if lifo_polls >= MAX_LIFO_POLLS_PER_TICK {
                     core.lifo_enabled = false;
                     super::counters::inc_lifo_capped();
                 }
 
                 // Run the LIFO task, then loop
+                // 运行 LIFO 任务,然后循环
                 *self.core.borrow_mut() = Some(core);
                 let task = self.worker.handle.shared.owned.assert_owner(task);
                 task.run();
@@ -717,6 +778,7 @@ impl Context {
     /// from where other workers can pick them up.
     /// Also, we rely on the workstealing algorithm to spread the tasks amongst workers
     /// after all the IOs get dispatched
+    /// 在等待任务执行时停放工作线程.
     fn park(&self, mut core: Box<Core>) -> Box<Core> {
         if let Some(f) = &self.worker.handle.shared.config.before_park {
             f();
@@ -757,6 +819,7 @@ impl Context {
         *self.core.borrow_mut() = Some(core);
 
         // Park thread
+        // 挂起线程
         if let Some(timeout) = duration {
             park.park_timeout(&self.worker.handle.driver, timeout);
         } else {
@@ -790,16 +853,20 @@ impl Context {
 
 impl Core {
     /// Increment the tick
+    /// 增加tick
     fn tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
     }
 
     /// Return the next notified task available to this worker.
+    /// 返回该worker可用的下一个任务
     fn next_task(&mut self, worker: &Worker) -> Option<Notified> {
         if self.tick % self.global_queue_interval == 0 {
             // Update the global queue interval, if needed
+            // 如果需要,更新全局队列间隔
             self.tune_global_queue_interval(worker);
 
+            // 尝试获取远程任务
             worker
                 .handle
                 .next_remote_task()
@@ -815,7 +882,7 @@ impl Core {
             if worker.inject().is_empty() {
                 return None;
             }
-            // 将inject中的任务, 转移到run_queue中
+            // 将inject中的部分任务, 转移到run_queue中
 
             // Other threads can only **remove** tasks from the current worker's
             // `run_queue`. So, we can be confident that by the time we call
@@ -861,6 +928,7 @@ impl Core {
     /// Note: Only if less than half the workers are searching for tasks to steal
     /// a new worker will actually try to steal. The idea is to make sure not all
     /// workers will be trying to steal at the same time.
+    /// 从另一个 worker 窃取任务
     fn steal_work(&mut self, worker: &Worker) -> Option<Notified> {
         // 判断是否获取远程任务
         if !self.transition_to_searching(worker) {
@@ -891,6 +959,7 @@ impl Core {
         }
 
         // Fallback on checking the global queue
+        // 回退到检查全局队列
         worker.handle.next_remote_task()
     }
 
@@ -918,6 +987,7 @@ impl Core {
     fn should_notify_others(&self) -> bool {
         // If there are tasks available to steal, but this worker is not
         // looking for tasks to steal, notify another worker.
+        // 如果有可窃取的任务,但此工作人员没有寻找可窃取的任务,则通知另一个工作人员.
         if self.is_searching {
             return false;
         }
@@ -1003,6 +1073,7 @@ impl Core {
 
     /// Signals all tasks to shut down, and waits for them to complete. Must run
     /// before we enter the single-threaded phase of shutdown processing.
+    /// 发出关闭所有任务的信号，并等待它们完成
     fn pre_shutdown(&mut self, worker: &Worker) {
         // Start from a random inner list
         let start = self
@@ -1071,6 +1142,7 @@ impl task::Schedule for Arc<Handle> {
 }
 
 impl Handle {
+    // 调度任务
     pub(super) fn schedule_task(&self, task: Notified, is_yield: bool) {
         with_current(|maybe_cx| {
             if let Some(cx) = maybe_cx {
@@ -1096,6 +1168,8 @@ impl Handle {
         }
     }
 
+    // 如果`yield`,则必须始终将任务推到队列的后面,以便执行其他任务.
+    // 如果不是`yield`,则灵活性更高,任务可能会排到队列的前面.
     fn schedule_local(&self, core: &mut Core, task: Notified, is_yield: bool) {
         core.stats.inc_local_schedule_count();
 
