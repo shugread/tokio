@@ -3,7 +3,9 @@ use crate::runtime::time::{EntryList, TimerHandle, TimerShared};
 use std::{array, fmt, ptr::NonNull};
 
 /// Wheel for a single level in the timer. This wheel contains 64 slots.
+/// 时间分层
 pub(crate) struct Level {
+    // 分层索引
     level: usize,
 
     /// Bit field tracking which slots currently contain entries.
@@ -13,22 +15,28 @@ pub(crate) struct Level {
     /// removed from a slot.
     ///
     /// The least-significant bit represents slot zero.
+    /// 插槽掩码
     occupied: u64,
 
     /// Slots. We access these via the EntryInner `current_list` as well, so this needs to be an `UnsafeCell`.
+    /// 任务列表
     slot: [EntryList; LEVEL_MULT],
 }
 
 /// Indicates when a slot must be processed next.
+/// 表示何时必须下一步处理插槽.
 #[derive(Debug)]
 pub(crate) struct Expiration {
     /// The level containing the slot.
+    /// 分层
     pub(crate) level: usize,
 
     /// The slot index.
+    /// 插槽索引
     pub(crate) slot: usize,
 
     /// The instant at which the slot needs to be processed.
+    /// 处理插槽的时间
     pub(crate) deadline: u64,
 }
 
@@ -48,9 +56,11 @@ impl Level {
 
     /// Finds the slot that needs to be processed next and returns the slot and
     /// `Instant` at which this slot must be processed.
+    /// 获取下一次超时
     pub(crate) fn next_expiration(&self, now: u64) -> Option<Expiration> {
         // Use the `occupied` bit field to get the index of the next slot that
         // needs to be processed.
+        // 使用`occupied`位字段来获取下一个需要处理的槽的索引.
         let slot = self.next_occupied_slot(now)?;
 
         // From the slot index, calculate the `Instant` at which it needs to be
@@ -61,7 +71,9 @@ impl Level {
 
         // Compute the start date of the current level by masking the low bits
         // of `now` (`level_range` is a power of 2).
+        // 层级的开始时间
         let level_start = now & !(level_range - 1);
+        // 超时时间
         let mut deadline = level_start + slot as u64 * slot_range;
 
         if deadline <= now {
@@ -111,22 +123,29 @@ impl Level {
         }
 
         // Get the slot for now using Maths
+        // 占用的槽位
         let now_slot = (now / slot_range(self.level)) as usize;
+        // 槽位的掩码
         let occupied = self.occupied.rotate_right(now_slot as u32);
+        // 第一个被占用的槽
         let zeros = occupied.trailing_zeros() as usize;
+        // 实际的槽号
         let slot = (zeros + now_slot) % LEVEL_MULT;
 
         Some(slot)
     }
 
+    // 添加任务
     pub(crate) unsafe fn add_entry(&mut self, item: TimerHandle) {
         let slot = slot_for(item.cached_when(), self.level);
 
         self.slot[slot].push_front(item);
 
+        // 设置掩码
         self.occupied |= occupied_bit(slot);
     }
 
+    // 移除任务
     pub(crate) unsafe fn remove_entry(&mut self, item: NonNull<TimerShared>) {
         let slot = slot_for(unsafe { item.as_ref().cached_when() }, self.level);
 
@@ -136,6 +155,7 @@ impl Level {
             debug_assert!(self.occupied & occupied_bit(slot) != 0);
 
             // Unset the bit
+            // 取消掩码
             self.occupied ^= occupied_bit(slot);
         }
     }
@@ -159,15 +179,18 @@ fn occupied_bit(slot: usize) -> u64 {
     1 << slot
 }
 
+/// 根据level计数槽的范围
 fn slot_range(level: usize) -> u64 {
     LEVEL_MULT.pow(level as u32) as u64
 }
 
+// 计数层级的范围
 fn level_range(level: usize) -> u64 {
     LEVEL_MULT as u64 * slot_range(level)
 }
 
 /// Converts a duration (milliseconds) and a level to a slot position.
+/// 将时间和层级转换成插槽
 fn slot_for(duration: u64, level: usize) -> usize {
     ((duration >> (level * 6)) % LEVEL_MULT as u64) as usize
 }

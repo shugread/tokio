@@ -2,6 +2,7 @@ use crate::runtime::time::TimeSource;
 use std::fmt;
 
 /// Handle to time driver instance.
+/// 时间驱动程序句柄.
 pub(crate) struct Handle {
     pub(super) time_source: TimeSource,
     pub(super) inner: super::Inner,
@@ -9,6 +10,7 @@ pub(crate) struct Handle {
 
 impl Handle {
     /// Returns the time source associated with this handle.
+    /// 返回与此句柄关联的时间源.
     pub(crate) fn time_source(&self) -> &TimeSource {
         &self.time_source
     }

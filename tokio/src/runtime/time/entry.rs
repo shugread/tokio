@@ -89,16 +89,21 @@ pub(super) const MAX_SAFE_MILLIS_DURATION: u64 = STATE_MIN_VALUE - 1;
 /// from the `TimerEntry` to the driver requires _both_ holding the `&mut
 /// TimerEntry` and the driver lock, while moving it back (firing the timer)
 /// requires only the driver lock.
+/// 维护定时器的状态,包括是否触发或取消注册.
 pub(super) struct StateCell {
     /// Holds either the scheduled expiration time for this timer, or (if the
     /// timer has been fired and is unregistered), `u64::MAX`.
+    /// 存储当前定时器的状态,使用 AtomicU64 类型.
+    /// 如果定时器已经触发或未注册,state 会被设置为`u64::MAX`.
     state: AtomicU64,
     /// If the timer is fired (an Acquire order read on state shows
     /// `u64::MAX`), holds the result that should be returned from
     /// polling the timer. Otherwise, the contents are unspecified and reading
     /// without holding the driver lock is undefined behavior.
+    /// 定时器的结果.该结果在定时器触发后被设置,并在 poll 操作时返回.
     result: UnsafeCell<TimerResult>,
     /// The currently-registered waker
+    /// 存储与定时器关联的 Waker,当定时器完成时,唤醒等待的任务.
     waker: AtomicWaker,
 }
 
@@ -128,6 +133,7 @@ impl StateCell {
     }
 
     /// Returns the current expiration time, or None if not currently scheduled.
+    /// 返回当前到期时间,如果当前没有调度,则返回 None.
     fn when(&self) -> Option<u64> {
         let cur_state = self.state.load(Ordering::Relaxed);
 
@@ -140,6 +146,7 @@ impl StateCell {
 
     /// If the timer is completed, returns the result of the timer. Otherwise,
     /// returns None and registers the waker.
+    /// 如果定时器已完成,则返回定时器的结果.否则,返回 None 并注册唤醒器.
     fn poll(&self, waker: &Waker) -> Poll<TimerResult> {
         // We must register first. This ensures that either `fire` will
         // observe the new waker, or we will observe a racing fire to have set
@@ -169,6 +176,9 @@ impl StateCell {
     /// containing the current scheduled time.
     ///
     /// SAFETY: Must hold the driver lock.
+    /// 标记定时器为待处理状态.
+    /// 如果定时器的时间未超过 not_after,则标记定时器为即将触发.
+    /// 如果新的时间早于当前时间,则返回错误.
     unsafe fn mark_pending(&self, not_after: u64) -> Result<(), u64> {
         // Quick initial debug check to see if the timer is already fired. Since
         // firing the timer can only happen with the driver lock held, we know
@@ -188,6 +198,7 @@ impl StateCell {
                 break Err(cur_state);
             }
 
+            // 标记即将触发
             match self.state.compare_exchange_weak(
                 cur_state,
                 STATE_PENDING_FIRE,
@@ -209,6 +220,7 @@ impl StateCell {
     ///   already fired
     ///
     /// SAFETY: The driver lock must be held.
+    /// 触发定时器,并将结果设置为提供的结果
     unsafe fn fire(&self, result: TimerResult) -> Option<Waker> {
         // Quick initial check to see if the timer is already fired. Since
         // firing the timer can only happen with the driver lock held, we know
@@ -226,6 +238,7 @@ impl StateCell {
         // write is visible before the state update is visible.
         unsafe { self.result.with_mut(|p| *p = result) };
 
+        // 设置完成状态
         self.state.store(STATE_DEREGISTERED, Ordering::Release);
 
         self.waker.take_waker()
@@ -236,6 +249,7 @@ impl StateCell {
     ///
     /// While this function is memory-safe, it should only be called from a
     /// context holding both `&mut TimerEntry` and the driver lock.
+    /// 设置定时器的到期时间
     fn set_expiration(&self, timestamp: u64) {
         debug_assert!(timestamp < STATE_MIN_VALUE);
 
@@ -250,6 +264,8 @@ impl StateCell {
     /// timestamp is earlier than the old timestamp, (or occasionally
     /// spuriously) returns Err without changing the timer's state. In this
     /// case, the timer must be deregistered and re-registered.
+    /// 尝试将定时器的到期时间延长.
+    /// 如果新的时间早于当前时间或定时器已触发,则返回错误.
     fn extend_expiration(&self, new_timestamp: u64) -> Result<(), ()> {
         let mut prior = self.state.load(Ordering::Relaxed);
         loop {
@@ -273,6 +289,7 @@ impl StateCell {
     /// be registered with the driver. This check is performed with relaxed
     /// ordering, but is conservative - if it returns false, the timer is
     /// definitely _not_ registered.
+    /// 可以已经注册
     pub(super) fn might_be_registered(&self) -> bool {
         self.state.load(Ordering::Relaxed) != u64::MAX
     }
@@ -283,10 +300,13 @@ impl StateCell {
 /// This is the handle to a timer that is controlled by the requester of the
 /// timer. As this participates in intrusive data structures, it must be pinned
 /// before polling.
+/// 这是定时器的句柄,由定时器的请求者控制.
+/// 由于它参与了侵入式数据结构,因此必须在轮询之前将其固定.
 #[derive(Debug)]
 pub(crate) struct TimerEntry {
     /// Arc reference to the runtime handle. We can only free the driver after
     /// deregistering everything from their respective timer wheels.
+    /// 运行时的句柄
     driver: scheduler::Handle,
     /// Shared inner structure; this is part of an intrusive linked list, and
     /// therefore other references can exist to it while mutable references to
@@ -294,11 +314,14 @@ pub(crate) struct TimerEntry {
     ///
     /// This is manipulated only under the inner mutex. TODO: Can we use loom
     /// cells for this?
+    /// 共享的内部结构
     inner: StdUnsafeCell<Option<TimerShared>>,
     /// Deadline for the timer. This is used to register on the first
     /// poll, as we can't register prior to being pinned.
+    /// 计时器的截止时间
     deadline: Instant,
     /// Whether the deadline has been registered.
+    /// 是否注册
     registered: bool,
     /// Ensure the type is !Unpin
     _m: std::marker::PhantomPinned,
@@ -317,6 +340,7 @@ unsafe impl Sync for TimerEntry {}
 /// immediately before registering the timer, and is consumed when firing the
 /// timer, to help minimize mistakes. Still, because `TimerHandle` cannot enforce
 /// memory safety, all operations are unsafe.
+/// 定时器的句柄
 #[derive(Debug)]
 pub(crate) struct TimerHandle {
     inner: NonNull<TimerShared>,
@@ -328,8 +352,10 @@ pub(super) type EntryList = crate::util::linked_list::LinkedList<TimerShared, Ti
 /// frontend (`Entry`) and driver backend.
 ///
 /// Note that this structure is located inside the `TimerEntry` structure.
+/// 定时器的共享状态
 pub(crate) struct TimerShared {
     /// The shard id. We should never change it.
+    /// 共享id, 不会改变
     shard_id: u32,
     /// A link within the doubly-linked list of timers on a particular level and
     /// slot. Valid only if state is equal to Registered.
@@ -340,11 +366,13 @@ pub(crate) struct TimerShared {
     /// The expiration time for which this entry is currently registered.
     /// Generally owned by the driver, but is accessed by the entry when not
     /// registered.
+    /// 当前注册的到期时间.
     cached_when: AtomicU64,
 
     /// Current state. This records whether the timer entry is currently under
     /// the ownership of the driver, and if not, its current state (not
     /// complete, fired, error, etc).
+    /// 状态
     state: StateCell,
 
     _p: PhantomPinned,
@@ -382,6 +410,7 @@ impl TimerShared {
     }
 
     /// Gets the cached time-of-expiration value.
+    /// 获取缓存的超时时间
     pub(super) fn cached_when(&self) -> u64 {
         // Cached-when is only accessed under the driver lock, so we can use relaxed
         self.cached_when.load(Ordering::Relaxed)
@@ -392,6 +421,7 @@ impl TimerShared {
     ///
     /// SAFETY: Must be called with the driver lock held, and when this entry is
     /// not in any timer wheel lists.
+    /// 从state同步超时时间
     pub(super) unsafe fn sync_when(&self) -> u64 {
         let true_when = self.true_when();
 
@@ -404,11 +434,13 @@ impl TimerShared {
     ///
     /// SAFETY: Must be called with the driver lock held, and when this entry is
     /// not in any timer wheel lists.
+    /// 设置缓存的超时时间值.
     unsafe fn set_cached_when(&self, when: u64) {
         self.cached_when.store(when, Ordering::Relaxed);
     }
 
     /// Returns the true time-of-expiration value, with relaxed memory ordering.
+    /// 从state获取超时时间
     pub(super) fn true_when(&self) -> u64 {
         self.state.when().expect("Timer already fired")
     }
@@ -418,12 +450,14 @@ impl TimerShared {
     ///
     /// SAFETY: Must only be called with the driver lock held and the entry not
     /// in the timer wheel.
+    /// 设置超时时间
     pub(super) unsafe fn set_expiration(&self, t: u64) {
         self.state.set_expiration(t);
         self.cached_when.store(t, Ordering::Relaxed);
     }
 
     /// Sets the true time-of-expiration only if it is after the current.
+    /// 延长超时时间
     pub(super) fn extend_expiration(&self, t: u64) -> Result<(), ()> {
         self.state.extend_expiration(t)
     }
@@ -491,6 +525,7 @@ impl TimerEntry {
     }
 
     // This lazy initialization is for performance purposes.
+    // 延迟初始化
     fn inner(&self) -> &TimerShared {
         let inner = unsafe { &*self.inner.get() };
         if inner.is_none() {
@@ -512,6 +547,7 @@ impl TimerEntry {
     }
 
     /// Cancels and deregisters the timer. This operation is irreversible.
+    /// 取消并注销计时器.此操作不可逆.
     pub(crate) fn cancel(self: Pin<&mut Self>) {
         // Avoid calling the `clear_entry` method, because it has not been initialized yet.
         if !self.is_inner_init() {
@@ -542,6 +578,7 @@ impl TimerEntry {
         unsafe { self.driver().clear_entry(NonNull::from(self.inner())) };
     }
 
+    // 重置定时器状态
     pub(crate) fn reset(mut self: Pin<&mut Self>, new_time: Instant, reregister: bool) {
         let this = unsafe { self.as_mut().get_unchecked_mut() };
         this.deadline = new_time;
@@ -561,6 +598,8 @@ impl TimerEntry {
         }
     }
 
+    // 轮询定时器是否已过期,并根据 Waker 唤醒任务.
+    // 如果定时器尚未注册,会注册定时器
     pub(crate) fn poll_elapsed(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,

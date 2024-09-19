@@ -111,14 +111,18 @@ pub(crate) struct Driver {
 }
 
 /// Timer state shared between `Driver`, `Handle`, and `Registration`.
+/// `Driver`、`Handle` 和 `Registration` 之间共享的计时器状态.
 struct Inner {
     /// The earliest time at which we promise to wake up without unparking.
+    /// 存储下一个定时任务的唤醒时间
     next_wake: AtomicOptionNonZeroU64,
 
     /// Sharded Timer wheels.
+    /// 这是驱动器管理的分片时间轮
     wheels: RwLock<ShardedWheel>,
 
     /// Number of entries in the sharded timer wheels.
+    /// 分片时间轮的数量
     wheels_len: u32,
 
     /// True if the driver is being shutdown.
@@ -144,6 +148,7 @@ impl Driver {
     /// thread and `time_source` to get the current time and convert to ticks.
     ///
     /// Specifying the source of time is useful when testing.
+    /// 创建一个新的`Driver`实例,该实例使用`park`来阻止当前线程并使用`time_source`来获取当前时间并转换为ticks.
     pub(crate) fn new(park: IoStack, clock: &Clock, shards: u32) -> (Driver, Handle) {
         assert!(shards > 0);
 
@@ -169,10 +174,12 @@ impl Driver {
         (driver, handle)
     }
 
+    // 无限期阻塞
     pub(crate) fn park(&mut self, handle: &driver::Handle) {
         self.park_internal(handle, None);
     }
 
+    // 带超时的阻塞
     pub(crate) fn park_timeout(&mut self, handle: &driver::Handle, duration: Duration) {
         self.park_internal(handle, Some(duration));
     }
@@ -198,6 +205,7 @@ impl Driver {
         assert!(!handle.is_shutdown());
 
         // Finds out the min expiration time to park.
+        // 获取最小的超时时间
         let expiration_time = {
             let mut wheels_lock = rt_handle
                 .time()
@@ -226,10 +234,12 @@ impl Driver {
                 // Note that we effectively round up to 1ms here - this avoids
                 // very short-duration microsecond-resolution sleeps that the OS
                 // might treat as zero-length.
+                // 定时器的最小超时
                 let mut duration = handle
                     .time_source
                     .tick_to_duration(when.saturating_sub(now));
 
+                // 大于0s的设置, 选出最小的超时时间
                 if duration > Duration::from_millis(0) {
                     if let Some(limit) = limit {
                         duration = std::cmp::min(limit, duration);
@@ -250,6 +260,7 @@ impl Driver {
         }
 
         // Process pending timers after waking up
+        // 处理超时任务
         handle.process(rt_handle.clock());
     }
 
@@ -258,6 +269,7 @@ impl Driver {
             let handle = rt_handle.time();
             let clock = rt_handle.clock();
 
+            // 自动推进时间(通常在测试环境中)
             if clock.can_auto_advance() {
                 self.park.park_timeout(rt_handle, Duration::from_secs(0));
 
@@ -303,6 +315,7 @@ fn next_wake_time(expiration_time: Option<u64>) -> Option<NonZeroU64> {
 
 impl Handle {
     /// Runs timer related logic, and returns the next wakeup time
+    /// 运行计时器相关逻辑
     pub(self) fn process(&self, clock: &Clock) {
         let now = self.time_source().now(clock);
         // For fairness, randomly select one to start.
@@ -314,6 +327,7 @@ impl Handle {
     pub(self) fn process_at_time(&self, start: u32, now: u64) {
         let shards = self.inner.get_shard_size();
 
+        // 最小的超时时间
         let expiration_time = (start..shards + start)
             .filter_map(|i| self.process_at_sharded_time(i, now))
             .min();
@@ -322,6 +336,7 @@ impl Handle {
     }
 
     // Returns the next wakeup time of this shard.
+    // 返回下一次唤醒时间
     pub(self) fn process_at_sharded_time(&self, id: u32, mut now: u64) -> Option<u64> {
         let mut waker_list = WakeList::new();
         let mut wheels_lock = self
@@ -329,6 +344,7 @@ impl Handle {
             .wheels
             .read()
             .expect("Timer wheel shards poisoned");
+        // 根据id获取时间盘
         let mut lock = wheels_lock.lock_sharded_wheel(id);
 
         if now < lock.elapsed() {
@@ -338,6 +354,10 @@ impl Handle {
             // hardware clock to be monotonic.
             //
             // See <https://github.com/tokio-rs/tokio/issues/3619> for more information.
+            // 时间倒流了!这通常不应该发生,因为 Rust 语言
+            // 保证 Instant 是单调的,但在 Windows 主机上的 VM 中运行
+            // Linux 时可能会发生,因为 std 错误地相信
+            // 硬件时钟是单调的.
             now = lock.elapsed();
         }
 
@@ -345,11 +365,13 @@ impl Handle {
             debug_assert!(unsafe { entry.is_pending() });
 
             // SAFETY: We hold the driver lock, and just removed the entry from any linked lists.
+            // 触发定时器
             if let Some(waker) = unsafe { entry.fire(Ok(())) } {
                 waker_list.push(waker);
 
                 if !waker_list.can_push() {
                     // Wake a batch of wakers. To avoid deadlock, we must do this with the lock temporarily dropped.
+                    // 唤醒一批Waker
                     drop(lock);
                     drop(wheels_lock);
 
@@ -382,6 +404,7 @@ impl Handle {
     ///
     /// SAFETY: The timer must not be registered with some other driver, and
     /// `add_entry` must not be called concurrently.
+    /// 从驱动器中移除已经注册的定时器
     pub(self) unsafe fn clear_entry(&self, entry: NonNull<TimerShared>) {
         unsafe {
             let wheels_lock = self
@@ -395,6 +418,7 @@ impl Handle {
                 lock.remove(entry);
             }
 
+            // 触发定时器
             entry.as_ref().handle().fire(Ok(()));
         }
     }
@@ -405,6 +429,7 @@ impl Handle {
     /// driver. No other threads are allowed to concurrently manipulate the
     /// timer at all (the current thread should hold an exclusive reference to
     /// the `TimerEntry`)
+    /// 删除并重新添加定时器到驱动器
     pub(self) unsafe fn reregister(
         &self,
         unpark: &IoHandle,
@@ -422,6 +447,7 @@ impl Handle {
 
             // We may have raced with a firing/deregistration, so check before
             // deregistering.
+            // 移除定时器
             if unsafe { entry.as_ref().might_be_registered() } {
                 lock.remove(entry);
             }
@@ -446,12 +472,14 @@ impl Handle {
                             .map(|next_wake| when < next_wake.get())
                             .unwrap_or(true)
                         {
+                            // 如果当前定时器的超时时间比 next_wake 还早,调用 unpark.unpark() 唤醒线程.
                             unpark.unpark();
                         }
 
                         None
                     }
                     Err((entry, crate::time::error::InsertError::Elapsed)) => unsafe {
+                        // 超时立即触发
                         entry.fire(Ok(()))
                     },
                 }

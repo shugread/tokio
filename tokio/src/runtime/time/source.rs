@@ -2,6 +2,7 @@ use super::MAX_SAFE_MILLIS_DURATION;
 use crate::time::{Clock, Duration, Instant};
 
 /// A structure which handles conversion from Instants to `u64` timestamps.
+/// 处理从`Instant`到`u64`时间戳的转换的结构.
 #[derive(Debug)]
 pub(crate) struct TimeSource {
     start_time: Instant,
