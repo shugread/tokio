@@ -10,26 +10,32 @@ use std::marker::PhantomData;
 #[must_use]
 pub(crate) struct SetCurrentGuard {
     // The previous handle
+    // 前一个句柄
     prev: Option<scheduler::Handle>,
 
     // The depth for this guard
+    // 守卫的深度
     depth: usize,
 
     // Don't let the type move across threads.
+    // 不能跨线程移动
     _p: PhantomData<SyncNotSend>,
 }
 
 pub(super) struct HandleCell {
     /// Current handle
+    /// 当前句柄
     handle: RefCell<Option<scheduler::Handle>>,
 
     /// Tracks the number of nested calls to `try_set_current`.
+    /// 跟踪对`try_set_current`的嵌套调用次数.
     depth: Cell<usize>,
 }
 
 /// Sets this [`Handle`] as the current active [`Handle`].
 ///
 /// [`Handle`]: crate::runtime::scheduler::Handle
+/// 设置句柄为当前活动的句柄
 pub(crate) fn try_set_current(handle: &scheduler::Handle) -> Option<SetCurrentGuard> {
     CONTEXT.try_with(|ctx| ctx.set_current(handle)).ok()
 }
@@ -72,6 +78,7 @@ impl HandleCell {
     }
 }
 
+// 恢复以前的句柄
 impl Drop for SetCurrentGuard {
     fn drop(&mut self) {
         CONTEXT.with(|ctx| {

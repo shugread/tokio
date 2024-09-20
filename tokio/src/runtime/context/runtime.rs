@@ -9,23 +9,29 @@ use std::fmt;
 #[must_use]
 pub(crate) enum EnterRuntime {
     /// Currently in a runtime context.
+    /// 当前在运行时的上下文中
     #[cfg_attr(not(feature = "rt"), allow(dead_code))]
     Entered { allow_block_in_place: bool },
 
     /// Not in a runtime context **or** a blocking region.
+    /// 不在运行时上下文中或阻塞区域中
     NotEntered,
 }
 
 /// Guard tracking that a caller has entered a runtime context.
+/// 保护跟踪调用者已进入运行时上下文
 #[must_use]
 pub(crate) struct EnterRuntimeGuard {
     /// Tracks that the current thread has entered a blocking function call.
+    /// 跟踪当前线程已进入阻塞函数调用.
     pub(crate) blocking: BlockingRegionGuard,
 
     #[allow(dead_code)] // Only tracking the guard.
+    // 跟踪守卫
     pub(crate) handle: SetCurrentGuard,
 
     // Tracks the previous random number generator seed
+    // 跟踪前一个随机数生成器种子
     old_seed: RngSeed,
 }
 
@@ -47,6 +53,7 @@ where
             });
 
             // Generate a new seed
+            // 生成新的随机数种子
             let rng_seed = handle.seed_generator().next_seed();
 
             // Swap the RNG seed
@@ -86,6 +93,7 @@ impl Drop for EnterRuntimeGuard {
             assert!(c.runtime.get().is_entered());
             c.runtime.set(EnterRuntime::NotEntered);
             // Replace the previous RNG seed
+            // 替换前一个随机数种子
             let mut rng = c.rng.get().unwrap_or_else(FastRand::new);
             rng.replace_seed(self.old_seed.clone());
             c.rng.set(Some(rng));

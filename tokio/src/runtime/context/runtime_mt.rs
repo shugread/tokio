@@ -1,12 +1,14 @@
 use super::{EnterRuntime, CONTEXT};
 
 /// Returns true if in a runtime context.
+/// 返回当前runtime状态
 pub(crate) fn current_enter_context() -> EnterRuntime {
     CONTEXT.with(|c| c.runtime.get())
 }
 
 /// Forces the current "entered" state to be cleared while the closure
 /// is executed.
+/// 在执行闭包时强制清除当前的`entered`状态
 pub(crate) fn exit_runtime<F: FnOnce() -> R, R>(f: F) -> R {
     // Reset in case the closure panics
     struct Reset(EnterRuntime);
