@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 /// This is exactly like `Cell<Option<Rc<T>>>`, except that it provides a `get`
 /// method even though `Rc` is not `Copy`.
+/// 这与 `Cell<Option<Rc<T>>>` 完全一样,只不过它提供了一个 `get`方法,尽管 `Rc` 不是 `Copy`.
 pub(crate) struct RcCell<T> {
     inner: UnsafeCell<Option<Rc<T>>>,
 }

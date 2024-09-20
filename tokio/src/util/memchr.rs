@@ -2,9 +2,11 @@
 //!
 //! When nothing pulls in libc, then just use a trivial implementation. Note
 //! that we only depend on libc on unix.
+//! 使用 libc 在字节数组中搜索一个字节.
 
 #[cfg(not(all(unix, feature = "libc")))]
 pub(crate) fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
+    // memchr 不支持libc的实现
     haystack.iter().position(|val| needle == *val)
 }
 

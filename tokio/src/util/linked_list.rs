@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "full"), allow(dead_code))]
 
 //! An intrusive double linked list of data.
+//! 侵入式双向数据链表.
 //!
 //! The data structure supports tracking pinned nodes. Most of the data
 //! structure's APIs are `unsafe` as they require the caller to ensure the
@@ -16,11 +17,16 @@ use core::ptr::{self, NonNull};
 ///
 /// Currently, the list is not emptied on drop. It is the caller's
 /// responsibility to ensure the list is empty before dropping it.
+/// 一个侵入式链表.
+/// 目前,删除时列表不会清空.
+/// 调用者有责任在删除列表之前确保列表为空.
 pub(crate) struct LinkedList<L, T> {
     /// Linked list head
+    /// 头指针
     head: Option<NonNull<T>>,
 
     /// Linked list tail
+    /// 尾指针
     tail: Option<NonNull<T>>,
 
     /// Node type marker.
@@ -31,29 +37,37 @@ unsafe impl<L: Link> Send for LinkedList<L, L::Target> where L::Target: Send {}
 unsafe impl<L: Link> Sync for LinkedList<L, L::Target> where L::Target: Sync {}
 
 /// Defines how a type is tracked within a linked list.
+/// 定义如何在链表中跟踪类型.
 ///
 /// In order to support storing a single type within multiple lists, accessing
 /// the list pointers is decoupled from the entry type.
+/// 为了支持在多个列表中存储单一类型,访问列表指针与元素类型分离.
 ///
 /// # Safety
 ///
 /// Implementations must guarantee that `Target` types are pinned in memory. In
 /// other words, when a node is inserted, the value will not be moved as long as
 /// it is stored in the list.
+/// 实现必须保证`Target`类型固定在内存中.
+/// 换句话说,当插入节点时,只要该值存储在列表中,就不会移动.
 pub(crate) unsafe trait Link {
     /// Handle to the list entry.
     ///
     /// This is usually a pointer-ish type.
+    /// 这通常是一种指针类型.
     type Handle;
 
     /// Node type.
+    /// 节点类型
     type Target;
 
     /// Convert the handle to a raw pointer without consuming the handle.
+    /// 将句柄转换为原始指针而不消耗句柄.
     #[allow(clippy::wrong_self_convention)]
     fn as_raw(handle: &Self::Handle) -> NonNull<Self::Target>;
 
     /// Convert the raw pointer to a handle
+    /// 将原始指针转换为句柄
     unsafe fn from_raw(ptr: NonNull<Self::Target>) -> Self::Handle;
 
     /// Return the pointers for a node
@@ -64,10 +78,12 @@ pub(crate) unsafe trait Link {
     /// stack as the argument. In particular, the method may not create an
     /// intermediate reference in the process of creating the resulting raw
     /// pointer.
+    /// 返回节点的指针
     unsafe fn pointers(target: NonNull<Self::Target>) -> NonNull<Pointers<Self::Target>>;
 }
 
 /// Previous / next pointers.
+/// 前一个/后一个的指针
 pub(crate) struct Pointers<T> {
     inner: UnsafeCell<PointersInner<T>>,
 }
@@ -88,9 +104,11 @@ pub(crate) struct Pointers<T> {
 /// <https://github.com/rust-lang/rust/pull/82834>
 struct PointersInner<T> {
     /// The previous node in the list. null if there is no previous node.
+    /// 列表中的前一个节点。如果没有前一个节点，则为 null.
     prev: Option<NonNull<T>>,
 
     /// The next node in the list. null if there is no previous node.
+    /// 列表中的后一个节点。如果没有前一个节点，则为 null.
     next: Option<NonNull<T>>,
 
     /// This type is !Unpin due to the heuristic from:
@@ -116,21 +134,25 @@ impl<L, T> LinkedList<L, T> {
 
 impl<L: Link> LinkedList<L, L::Target> {
     /// Adds an element first in the list.
+    /// 在列表中首先添加一个元素.
     pub(crate) fn push_front(&mut self, val: L::Handle) {
         // The value should not be dropped, it is being inserted into the list
         let val = ManuallyDrop::new(val);
         let ptr = L::as_raw(&val);
         assert_ne!(self.head, Some(ptr));
         unsafe {
-            L::pointers(ptr).as_mut().set_next(self.head);
-            L::pointers(ptr).as_mut().set_prev(None);
+            L::pointers(ptr).as_mut().set_next(self.head); // ptr设置在原来的头前面
+            L::pointers(ptr).as_mut().set_prev(None); // 头节点,前一个节点为空
 
             if let Some(head) = self.head {
+                // 如果原来的头节点不为空, 设置前一个节点为插入的头节点
                 L::pointers(head).as_mut().set_prev(Some(ptr));
             }
 
+            // 更新头节点
             self.head = Some(ptr);
 
+            // 如果尾节点为空, 表示原链表为空, 头节点和尾节点都是插入的节点
             if self.tail.is_none() {
                 self.tail = Some(ptr);
             }
@@ -139,15 +161,17 @@ impl<L: Link> LinkedList<L, L::Target> {
 
     /// Removes the first element from a list and returns it, or None if it is
     /// empty.
+    /// 弹出第一个节点
     pub(crate) fn pop_front(&mut self) -> Option<L::Handle> {
         unsafe {
-            let head = self.head?;
-            self.head = L::pointers(head).as_ref().get_next();
+            let head = self.head?; // 头节点是否为空
+            self.head = L::pointers(head).as_ref().get_next(); // 头节点不为空,获取新的头节点
 
             if let Some(new_head) = L::pointers(head).as_ref().get_next() {
+                // 新头节点不为空, 将其前节点设置为空
                 L::pointers(new_head).as_mut().set_prev(None);
             } else {
-                self.tail = None;
+                self.tail = None; // 新头节点为空, 表示链表被清空
             }
 
             L::pointers(head).as_mut().set_prev(None);
@@ -159,15 +183,17 @@ impl<L: Link> LinkedList<L, L::Target> {
 
     /// Removes the last element from a list and returns it, or None if it is
     /// empty.
+    /// 弹出最后一个节点
     pub(crate) fn pop_back(&mut self) -> Option<L::Handle> {
         unsafe {
-            let last = self.tail?;
-            self.tail = L::pointers(last).as_ref().get_prev();
+            let last = self.tail?; // 尾节点是否为空
+            self.tail = L::pointers(last).as_ref().get_prev(); // 尾节点不为空,获取新的尾节点
 
             if let Some(prev) = L::pointers(last).as_ref().get_prev() {
+                // 尾节点不为空,设置尾节点的下一个节点为空
                 L::pointers(prev).as_mut().set_next(None);
             } else {
-                self.head = None;
+                self.head = None; // 新尾节点为空, 链表被清空
             }
 
             L::pointers(last).as_mut().set_prev(None);
@@ -178,6 +204,7 @@ impl<L: Link> LinkedList<L, L::Target> {
     }
 
     /// Returns whether the linked list does not contain any node
+    /// 返回链表是否不包含任何节点
     pub(crate) fn is_empty(&self) -> bool {
         if self.head.is_some() {
             return false;
@@ -197,31 +224,39 @@ impl<L: Link> LinkedList<L, L::Target> {
     /// - `node` is currently contained by some other `GuardedLinkedList` **and**
     ///   the caller has an exclusive access to that list. This condition is
     ///   used by the linked list in `sync::Notify`.
+    ///
+    /// 从链表中删除指定节点
     pub(crate) unsafe fn remove(&mut self, node: NonNull<L::Target>) -> Option<L::Handle> {
         if let Some(prev) = L::pointers(node).as_ref().get_prev() {
+            // 有前节点
             debug_assert_eq!(L::pointers(prev).as_ref().get_next(), Some(node));
             L::pointers(prev)
                 .as_mut()
-                .set_next(L::pointers(node).as_ref().get_next());
+                .set_next(L::pointers(node).as_ref().get_next()); // 将前节点的下一个节点设置为当前节点的下一个节点
         } else {
             if self.head != Some(node) {
+                // 没有前节点, 当前节点也不是头节点, 返回None
                 return None;
             }
 
+            // 是头节点, 设置新头节点是当前节点的下一个节点
             self.head = L::pointers(node).as_ref().get_next();
         }
 
         if let Some(next) = L::pointers(node).as_ref().get_next() {
+            // 有下一个节点
             debug_assert_eq!(L::pointers(next).as_ref().get_prev(), Some(node));
             L::pointers(next)
                 .as_mut()
-                .set_prev(L::pointers(node).as_ref().get_prev());
+                .set_prev(L::pointers(node).as_ref().get_prev()); // 设置下一个节点的前一个节点是当前节点的前一个节点
         } else {
             // This might be the last item in the list
             if self.tail != Some(node) {
+                // 没有下一个节点, 不是尾节点, 返回None
                 return None;
             }
 
+            // 是尾节点, 设置新尾节点是当前节点的前一个节点
             self.tail = L::pointers(node).as_ref().get_prev();
         }
 
@@ -249,6 +284,7 @@ impl<L: Link> fmt::Debug for LinkedList<L, L::Target> {
     feature = "sync",
 ))]
 impl<L: Link> LinkedList<L, L::Target> {
+    // 获取尾节点
     pub(crate) fn last(&self) -> Option<&L::Target> {
         let tail = self.tail.as_ref()?;
         unsafe { Some(&*tail.as_ptr()) }
@@ -264,6 +300,7 @@ impl<L: Link> Default for LinkedList<L, L::Target> {
 // ===== impl DrainFilter =====
 
 cfg_io_driver_impl! {
+    // 获取过滤器
     pub(crate) struct DrainFilter<'a, T: Link, F> {
         list: &'a mut LinkedList<T, T::Target>,
         filter: F,
@@ -297,6 +334,7 @@ cfg_io_driver_impl! {
                 self.curr = unsafe { T::pointers(curr).as_ref() }.get_next();
 
                 // safety: the value is still owned by the linked list.
+                // 将满足过滤器的元素移出链表
                 if (self.filter)(unsafe { &mut *curr.as_ptr() }) {
                     return unsafe { self.list.remove(curr) };
                 }
@@ -308,6 +346,7 @@ cfg_io_driver_impl! {
 }
 
 cfg_taskdump! {
+    /// 遍历链表
     impl<T: Link> LinkedList<T, T::Target> {
         pub(crate) fn for_each<F>(&mut self, mut f: F)
         where
@@ -343,6 +382,7 @@ feature! {
     ///
     /// If a list is empty, then both pointers of the guard node are pointing
     /// at the guard node itself.
+    /// 将链表转换成循环链表
     pub(crate) struct GuardedLinkedList<L, T> {
         /// Pointer to the guard node.
         guard: NonNull<T>,
@@ -355,6 +395,7 @@ feature! {
         /// Turns a linked list into the guarded version by linking the guard node
         /// with the head and tail nodes. Like with other nodes, you should guarantee
         /// that the guard node is pinned in memory.
+        /// 转换成循环链表
         pub(crate) fn into_guarded(self, guard_handle: L::Handle) -> GuardedLinkedList<L, L::Target> {
             // `guard_handle` is a NonNull pointer, we don't have to care about dropping it.
             let guard = L::as_raw(&guard_handle);
@@ -382,6 +423,7 @@ feature! {
     }
 
     impl<L: Link> GuardedLinkedList<L, L::Target> {
+        // 获取尾元素
         fn tail(&self) -> Option<NonNull<L::Target>> {
             let tail_ptr = unsafe {
                 L::pointers(self.guard).as_ref().get_prev().unwrap()
@@ -399,6 +441,7 @@ feature! {
 
         /// Removes the last element from a list and returns it, or None if it is
         /// empty.
+        /// 移除最后一个元素
         pub(crate) fn pop_back(&mut self) -> Option<L::Handle> {
             unsafe {
                 let last = self.tail()?;
@@ -420,6 +463,7 @@ feature! {
 
 impl<T> Pointers<T> {
     /// Create a new set of empty pointers
+    /// 创建一组新的空指针
     pub(crate) fn new() -> Pointers<T> {
         Pointers {
             inner: UnsafeCell::new(PointersInner {
@@ -430,21 +474,25 @@ impl<T> Pointers<T> {
         }
     }
 
+    // 获取前一个节点
     pub(crate) fn get_prev(&self) -> Option<NonNull<T>> {
         // SAFETY: Field is accessed immutably through a reference.
         unsafe { ptr::addr_of!((*self.inner.get()).prev).read() }
     }
+    // 获取后一个节点
     pub(crate) fn get_next(&self) -> Option<NonNull<T>> {
         // SAFETY: Field is accessed immutably through a reference.
         unsafe { ptr::addr_of!((*self.inner.get()).next).read() }
     }
 
+    // 设置前一个节点
     fn set_prev(&mut self, value: Option<NonNull<T>>) {
         // SAFETY: Field is accessed mutably through a mutable reference.
         unsafe {
             ptr::addr_of_mut!((*self.inner.get()).prev).write(value);
         }
     }
+    // 设置后一个节点
     fn set_next(&mut self, value: Option<NonNull<T>>) {
         // SAFETY: Field is accessed mutably through a mutable reference.
         unsafe {

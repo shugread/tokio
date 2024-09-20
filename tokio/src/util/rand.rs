@@ -11,6 +11,7 @@ cfg_rt! {
 ///
 /// In order to make certain functions within a runtime deterministic, a seed
 /// can be specified at the time of creation.
+/// 用于随机数生成的种子.
 #[allow(unreachable_pub)]
 #[derive(Clone, Debug)]
 pub struct RngSeed {
@@ -33,6 +34,7 @@ pub(crate) struct FastRand {
 
 impl RngSeed {
     /// Creates a random seed using loom internally.
+    /// 在内部使用 loom 创建随机种子.
     pub(crate) fn new() -> Self {
         Self::from_u64(crate::loom::rand::seed())
     }
@@ -56,11 +58,13 @@ impl RngSeed {
 
 impl FastRand {
     /// Initialize a new fast random number generator using the default source of entropy.
+    /// 使用默认种子初始化一个新的快速随机数生成器.
     pub(crate) fn new() -> FastRand {
         FastRand::from_seed(RngSeed::new())
     }
 
     /// Initializes a new, thread-local, fast random number generator.
+    /// 初始化一个新的,线程本地的,快速随机数生成器.
     pub(crate) fn from_seed(seed: RngSeed) -> FastRand {
         FastRand {
             one: seed.s,

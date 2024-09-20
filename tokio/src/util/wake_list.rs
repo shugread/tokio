@@ -2,6 +2,7 @@ use core::mem::MaybeUninit;
 use core::ptr;
 use std::task::Waker;
 
+// 默认存放32个
 const NUM_WAKERS: usize = 32;
 
 /// A list of wakers to be woken.
@@ -9,6 +10,7 @@ const NUM_WAKERS: usize = 32;
 /// # Invariants
 ///
 /// The first `curr` elements of `inner` are initialized.
+/// 需要唤醒的waker列表
 pub(crate) struct WakeList {
     inner: [MaybeUninit<Waker>; NUM_WAKERS],
     curr: usize,
@@ -29,6 +31,7 @@ impl WakeList {
         self.curr < NUM_WAKERS
     }
 
+    // 先判断能否push
     pub(crate) fn push(&mut self, val: Waker) {
         debug_assert!(self.can_push());
 
@@ -36,6 +39,7 @@ impl WakeList {
         self.curr += 1;
     }
 
+    // 唤醒所有waker
     pub(crate) fn wake_all(&mut self) {
         struct DropGuard {
             start: *mut Waker,
@@ -59,9 +63,11 @@ impl WakeList {
             // SAFETY: The resulting pointer is in bounds or one after the length of the same object.
             let end = unsafe { start.add(self.curr) };
             // Transfer ownership of the wakers in `inner` to `DropGuard`.
+            // 将 `inner` 中的waker的所有权转移到 `DropGuard`.
             self.curr = 0;
             DropGuard { start, end }
         };
+        // 循环唤醒
         while !ptr::eq(guard.start, guard.end) {
             // SAFETY: `start` is always initialized if `start != end`.
             let waker = unsafe { ptr::read(guard.start) };

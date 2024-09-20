@@ -24,6 +24,7 @@ impl<T> OnceCell<T> {
     ///
     /// If the `init` closure panics, then the `OnceCell` is poisoned and all
     /// future calls to `get` will panic.
+    /// 获取此单元格内的值,如有必要,使用提供的函数对其进行初始化.
     #[inline]
     pub(crate) fn get(&self, init: impl FnOnce() -> T) -> &T {
         if !self.once.is_completed() {
@@ -41,6 +42,7 @@ impl<T> OnceCell<T> {
     }
 
     #[cold]
+    /// 初始化
     fn do_init(&self, init: impl FnOnce() -> T) {
         let value_ptr = self.value.get() as *mut T;
 

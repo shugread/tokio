@@ -8,6 +8,8 @@ cfg_64bit_metrics! {
 ///
 /// When used on platforms without 64-bit atomics, writes to this are no-ops.
 /// The `load` method is only defined when 64-bit atomics are available.
+/// 在没有 64 位原子的平台上使用时,对此的写入是无操作.
+/// 仅当 64 位原子可用时才会定义 `load` 方法.
 #[derive(Debug, Default)]
 pub(crate) struct MetricAtomicU64 {
     #[cfg(target_has_atomic = "64")]
@@ -50,6 +52,7 @@ impl MetricAtomicU64 {
 /// `AtomicUsize` for use in metrics.
 ///
 /// This exposes simplified APIs for use in metrics & uses `std::sync` instead of Loom to avoid polluting loom logs with metric information.
+/// 这公开了用于指标的简化 API.
 #[derive(Debug, Default)]
 pub(crate) struct MetricAtomicUsize {
     value: AtomicUsize,

@@ -20,6 +20,7 @@ type LinkedList<T> =
     linked_list::LinkedList<ListEntry<T>, <ListEntry<T> as linked_list::Link>::Target>;
 
 /// This is the main handle to the collection.
+/// 这是集合的主句柄.
 pub(crate) struct IdleNotifiedSet<T> {
     lists: Arc<Lists<T>>,
     length: usize,
@@ -46,11 +47,16 @@ type Lists<T> = Mutex<ListsInner<T>>;
 /// `ListEntry` items also hold a strong reference back to the Lists object, but
 /// the destructor of the `IdleNotifiedSet` will clear the two lists, so once
 /// that object is destroyed, no ref-cycles will remain.
+/// 链接列表持有对 `ListEntry` 项的强引用，并且
+/// `ListEntry` 项也持有对 Lists 对象的强引用，但是
+/// `IdleNotifiedSet` 的析构函数将清除这两个列表，因此一旦
+/// 该对象被销毁，就不会留下任何引用循环。
 struct ListsInner<T> {
     notified: LinkedList<T>,
     idle: LinkedList<T>,
     /// Whenever an element in the `notified` list is woken, this waker will be
     /// notified and consumed, if it exists.
+    /// 每当`notified`列表中的元素被唤醒时,此waker将被通知并使用(如果存在)
     waker: Option<Waker>,
 }
 
@@ -61,6 +67,13 @@ struct ListsInner<T> {
 ///
 /// If the value is `Neither`, then it is still possible that the entry is in
 /// some third external list (this happens in `drain`).
+///  此条目存储在共享 Lists 对象中的哪个列表中？
+///
+/// 如果值为`Idle`,则条目的唤醒程序可以将其移动到已通知的列表.
+/// 否则,只有`IdleNotifiedSet`可以移动它.
+///
+/// 如果值为“Neither”，则条目仍然可能位于
+/// 某个第三个外部列表中(这发生在`drain`中).
 #[derive(Copy, Clone, Eq, PartialEq)]
 enum List {
     Notified,
@@ -90,12 +103,16 @@ enum List {
 /// value should not be leaked.)
 struct ListEntry<T> {
     /// The linked list pointers of the list this entry is in.
+    /// 链接链表指针.
     pointers: linked_list::Pointers<ListEntry<T>>,
     /// Pointer to the shared `Lists` struct.
+    /// 指向共享`Lists`结构的指针.
     parent: Arc<Lists<T>>,
     /// The value stored in this entry.
+    /// 存储的值.
     value: UnsafeCell<ManuallyDrop<T>>,
     /// Used to remember which list this entry is in.
+    /// 用于记住位于哪个列表中.
     my_list: UnsafeCell<List>,
     /// Required by the `linked_list::Pointers` field.
     _pin: PhantomPinned,
@@ -125,6 +142,7 @@ unsafe impl<T> Sync for ListEntry<T> {}
 
 impl<T> IdleNotifiedSet<T> {
     /// Create a new `IdleNotifiedSet`.
+    /// 创建IdleNotifiedSet
     pub(crate) fn new() -> Self {
         let lists = Mutex::new(ListsInner {
             notified: LinkedList::new(),
@@ -147,6 +165,7 @@ impl<T> IdleNotifiedSet<T> {
     }
 
     /// Insert the given value into the `idle` list.
+    /// 将给定的值插入到`idle`列表中.
     pub(crate) fn insert_idle(&mut self, value: T) -> EntryInOneOfTheLists<'_, T> {
         self.length += 1;
 
@@ -169,6 +188,7 @@ impl<T> IdleNotifiedSet<T> {
 
     /// Pop an entry from the notified list to poll it. The entry is moved to
     /// the idle list atomically.
+    /// 从`notified`弹出一个到`idle`
     pub(crate) fn pop_notified(&mut self, waker: &Waker) -> Option<EntryInOneOfTheLists<'_, T>> {
         // We don't decrement the length because this call moves the entry to
         // the idle list rather than removing it.
@@ -179,6 +199,7 @@ impl<T> IdleNotifiedSet<T> {
 
         let mut lock = self.lists.lock();
 
+        // 需要更新wake才更新
         let should_update_waker = match lock.waker.as_mut() {
             Some(cur_waker) => !waker.will_wake(cur_waker),
             None => true,
@@ -205,6 +226,7 @@ impl<T> IdleNotifiedSet<T> {
 
     /// Tries to pop an entry from the notified list to poll it. The entry is moved to
     /// the idle list atomically.
+    /// 尝试从`notified`弹出一个到`idle`
     pub(crate) fn try_pop_notified(&mut self) -> Option<EntryInOneOfTheLists<'_, T>> {
         // We don't decrement the length because this call moves the entry to
         // the idle list rather than removing it.
@@ -232,6 +254,7 @@ impl<T> IdleNotifiedSet<T> {
     }
 
     /// Call a function on every element in this list.
+    /// 遍历所有元素
     pub(crate) fn for_each<F: FnMut(&mut T)>(&mut self, mut func: F) {
         fn get_ptrs<T>(list: &mut LinkedList<T>, ptrs: &mut Vec<*mut T>) {
             let mut node = list.last();
@@ -255,6 +278,7 @@ impl<T> IdleNotifiedSet<T> {
         // operation, which would otherwise result in some value being listed
         // twice.
         let mut ptrs = Vec::with_capacity(self.len());
+        // 将idle和notified的指针复制一份到pts中
         {
             let mut lock = self.lists.lock();
 
@@ -263,6 +287,7 @@ impl<T> IdleNotifiedSet<T> {
         }
         debug_assert_eq!(ptrs.len(), ptrs.capacity());
 
+        // 循环执行
         for ptr in ptrs {
             // Safety: When we grabbed the pointers, the entries were in one of
             // the two lists. This means that their value was valid at the time,
@@ -278,6 +303,7 @@ impl<T> IdleNotifiedSet<T> {
     ///
     /// The closure is called on all elements even if it panics. Having it panic
     /// twice is a double-panic, and will abort the application.
+    /// 移除所有元素
     pub(crate) fn drain<F: FnMut(T)>(&mut self, func: F) {
         if self.length == 0 {
             // Fast path.
@@ -297,6 +323,7 @@ impl<T> IdleNotifiedSet<T> {
 
         impl<T, F: FnMut(T)> AllEntries<T, F> {
             fn pop_next(&mut self) -> bool {
+                // 弹出元素, 没有元素返回false
                 if let Some(entry) = self.all_entries.pop_back() {
                     // Safety: We just took this value from the list, so we can
                     // destroy the value in the entry.
@@ -312,6 +339,7 @@ impl<T> IdleNotifiedSet<T> {
 
         impl<T, F: FnMut(T)> Drop for AllEntries<T, F> {
             fn drop(&mut self) {
+                // 循环调用next, 移除数据
                 while self.pop_next() {}
             }
         }
@@ -338,6 +366,7 @@ impl<T> IdleNotifiedSet<T> {
         // If the closure panics, then the destructor of the `AllEntries` bomb
         // ensures that we keep running the destructor on the remaining values.
         // A second panic will abort the program.
+        // 循环移出数据
         while all_entries.pop_next() {}
     }
 }
@@ -346,6 +375,7 @@ impl<T> IdleNotifiedSet<T> {
 ///
 /// The mutex for the entries must be held, and the target list must be such
 /// that setting `my_list` to `Neither` is ok.
+/// 移动数据
 unsafe fn move_to_new_list<T>(from: &mut LinkedList<T>, to: &mut LinkedList<T>) {
     while let Some(entry) = from.pop_back() {
         entry.my_list.with_mut(|ptr| {
@@ -361,6 +391,7 @@ impl<'a, T> EntryInOneOfTheLists<'a, T> {
     ///
     /// This consumes the value, since it is no longer guaranteed to be in a
     /// list.
+    /// 从链表中移出元素, 并返回值
     pub(crate) fn remove(self) -> T {
         self.set.length -= 1;
 
@@ -400,6 +431,7 @@ impl<'a, T> EntryInOneOfTheLists<'a, T> {
     }
 
     /// Access the value in this entry together with a context for its waker.
+    /// 访问此条目中的值以及其waker的上下文
     pub(crate) fn with_value_and_context<F, U>(&mut self, func: F) -> U
     where
         F: FnOnce(&mut T, &mut Context<'_>) -> U,
@@ -437,6 +469,7 @@ impl<T: 'static> Wake for ListEntry<T> {
 
         // Safety: We are holding the lock and we will update the lists to
         // maintain invariants.
+        // 将my_list设置尾Notified
         let old_my_list = me.my_list.with_mut(|ptr| unsafe {
             let old_my_list = *ptr;
             if old_my_list == List::Idle {
@@ -446,14 +479,17 @@ impl<T: 'static> Wake for ListEntry<T> {
         });
 
         if old_my_list == List::Idle {
+            // 原来是空闲的, 从idle中移除
             // We move ourself to the notified list.
             let me = unsafe {
                 // Safety: We just checked that we are in this particular list.
                 lock.idle.remove(ListEntry::as_raw(me)).unwrap()
             };
+            // 添加到notified中
             lock.notified.push_front(me);
 
             if let Some(waker) = lock.waker.take() {
+                // 调用waker
                 drop(lock);
                 waker.wake();
             }

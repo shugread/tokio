@@ -5,11 +5,13 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::Ordering::SeqCst;
 
+// 尝试锁定
 pub(crate) struct TryLock<T> {
     locked: AtomicBool,
     data: UnsafeCell<T>,
 }
 
+// 锁的守卫,释放锁
 pub(crate) struct LockGuard<'a, T> {
     lock: &'a TryLock<T>,
     _p: PhantomData<std::rc::Rc<()>>,
@@ -43,6 +45,7 @@ impl<T> TryLock<T> {
     }
 
     /// Attempt to acquire lock
+    /// 获取锁
     pub(crate) fn try_lock(&self) -> Option<LockGuard<'_, T>> {
         if self
             .locked
@@ -73,6 +76,7 @@ impl<T> DerefMut for LockGuard<'_, T> {
     }
 }
 
+// 释放锁
 impl<T> Drop for LockGuard<'_, T> {
     fn drop(&mut self) {
         self.lock.locked.store(false, SeqCst);
