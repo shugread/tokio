@@ -19,6 +19,7 @@ use std::time::Duration;
 /// I/O driver, backed by Mio.
 pub(crate) struct Driver {
     /// True when an event with the signal token is received
+    /// 当接收到带有信号标记的事件时为true
     signal_ready: bool,
 
     /// Reuse the `mio::Events` value across calls to poll.
@@ -31,16 +32,20 @@ pub(crate) struct Driver {
 /// A reference to an I/O driver.
 pub(crate) struct Handle {
     /// Registers I/O resources.
+    /// 注册I/O资源
     registry: mio::Registry,
 
     /// Tracks all registrations
+    /// 跟踪所有注册
     registrations: RegistrationSet,
 
     /// State that should be synchronized
+    /// 同步的状态
     synced: Mutex<registration_set::Synced>,
 
     /// Used to wake up the reactor from a call to `turn`.
     /// Not supported on `Wasi` due to lack of threading support.
+    /// 用于从`turn`调用中唤醒
     #[cfg(not(target_os = "wasi"))]
     waker: mio::Waker,
 
@@ -118,11 +123,13 @@ impl Driver {
         Ok((driver, handle))
     }
 
+    // 挂起
     pub(crate) fn park(&mut self, rt_handle: &driver::Handle) {
         let handle = rt_handle.io();
         self.turn(handle, None);
     }
 
+    // 带超时的挂起
     pub(crate) fn park_timeout(&mut self, rt_handle: &driver::Handle, duration: Duration) {
         let handle = rt_handle.io();
         self.turn(handle, Some(duration));
@@ -138,15 +145,18 @@ impl Driver {
         }
     }
 
+    // 挂起
     fn turn(&mut self, handle: &Handle, max_wait: Option<Duration>) {
         debug_assert!(!handle.registrations.is_shutdown(&handle.synced.lock()));
 
+        // 释放pendding的注册
         handle.release_pending_registrations();
 
         let events = &mut self.events;
 
         // Block waiting for an event to happen, peeling out how many events
         // happened.
+        // 阻止等待事件发生,提取发生了多少事件
         match self.poll.poll(events, max_wait) {
             Ok(()) => {}
             Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
@@ -159,13 +169,16 @@ impl Driver {
         }
 
         // Process all the events that came in, dispatching appropriately
+        // 处理所有传入的事件,并进行适当调度
         let mut ready_count = 0;
         for event in events.iter() {
             let token = event.token();
 
             if token == TOKEN_WAKEUP {
                 // Nothing to do, the event is used to unblock the I/O driver
+                // 无需执行任何操作,该事件用于解除 I/O 驱动程序的阻塞
             } else if token == TOKEN_SIGNAL {
+                // 信号可用
                 self.signal_ready = true;
             } else {
                 let ready = Ready::from_mio(event);
@@ -179,6 +192,7 @@ impl Driver {
                 let io: &ScheduledIo = unsafe { &*ptr };
 
                 io.set_readiness(Tick::Set, |curr| curr | ready);
+                // 唤醒
                 io.wake(ready);
 
                 ready_count += 1;
@@ -205,6 +219,7 @@ impl Handle {
     /// after this method has been called. If the reactor is not currently
     /// blocked in `turn`, then the next call to `turn` will not block and
     /// return immediately.
+    /// 强制唤醒在`turn`调用中的阻塞
     pub(crate) fn unpark(&self) {
         #[cfg(not(target_os = "wasi"))]
         self.waker.wake().expect("failed to wake I/O driver");
@@ -213,6 +228,7 @@ impl Handle {
     /// Registers an I/O resource with the reactor for a given `mio::Ready` state.
     ///
     /// The registration token is returned.
+    /// 注册I/O资源
     pub(super) fn add_source(
         &self,
         source: &mut impl mio::event::Source,
@@ -225,6 +241,7 @@ impl Handle {
         // the `source` with the OS fails. Otherwise it will leak the `scheduled_io`.
         if let Err(e) = self.registry.register(source, token, interest.to_mio()) {
             // safety: `scheduled_io` is part of the `registrations` set.
+            // 注册失败, 移除scheduled_io
             unsafe {
                 self.registrations
                     .remove(&mut self.synced.lock(), &scheduled_io)
@@ -240,6 +257,7 @@ impl Handle {
     }
 
     /// Deregisters an I/O resource from the reactor.
+    /// 注销 I/O 资源
     pub(super) fn deregister_source(
         &self,
         registration: &Arc<ScheduledIo>,

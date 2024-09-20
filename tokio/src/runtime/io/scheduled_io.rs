@@ -98,12 +98,16 @@ use std::task::{Context, Poll, Waker};
     )),
     repr(align(64))
 )]
+/// 该结构表示一个 I/O 资源
 pub(crate) struct ScheduledIo {
+    /// 用于将该 I/O 资源整合到链表中
     pub(super) linked_list_pointers: UnsafeCell<linked_list::Pointers<Self>>,
 
     /// Packs the resource's readiness and I/O driver latest tick.
+    /// 包括资源的就绪状态,驱动器的计时器(tick),以及关闭状态
     readiness: AtomicUsize,
 
+    /// 当前等待此 I/O 资源的任务
     waiters: Mutex<Waiters>,
 }
 
@@ -115,9 +119,11 @@ struct Waiters {
     list: WaitList,
 
     /// Waker used for `AsyncRead`.
+    /// 等待读取就绪的任务
     reader: Option<Waker>,
 
     /// Waker used for `AsyncWrite`.
+    /// 等待写入就绪的任务
     writer: Option<Waker>,
 }
 
@@ -126,11 +132,14 @@ struct Waiter {
     pointers: linked_list::Pointers<Waiter>,
 
     /// The waker for this task.
+    /// 用于唤醒等待任务
     waker: Option<Waker>,
 
     /// The interest this waiter is waiting on.
+    /// 对哪种就绪状态感兴趣
     interest: Interest,
 
+    /// 是否已收到就绪通知
     is_ready: bool,
 
     /// Should never be `!Unpin`.
@@ -186,6 +195,7 @@ impl Default for ScheduledIo {
 }
 
 impl ScheduledIo {
+    /// 将地址作为Token
     pub(crate) fn token(&self) -> mio::Token {
         // use `expose_addr` when stable
         mio::Token(self as *const _ as usize)
@@ -193,6 +203,7 @@ impl ScheduledIo {
 
     /// Invoked when the IO driver is shut down; forces this `ScheduledIo` into a
     /// permanently shutdown state.
+    /// 关闭
     pub(super) fn shutdown(&self) {
         let mask = SHUTDOWN.pack(1, 0);
         self.readiness.fetch_or(mask, AcqRel);
@@ -207,6 +218,8 @@ impl ScheduledIo {
     ///    specific tick.
     /// - `f`: a closure returning a new readiness value given the previous
     ///   readiness.
+    ///
+    /// 通过调用当前值上的给定闭包来设置此 `ScheduledIo` 上的就绪状态,返回上一个就绪状态值
     pub(super) fn set_readiness(&self, tick: Tick, f: impl Fn(Ready) -> Ready) {
         let mut current = self.readiness.load(Acquire);
 
@@ -216,16 +229,19 @@ impl ScheduledIo {
         loop {
             // Mask out the tick bits so that the modifying function doesn't see
             // them.
+            // 屏蔽tick位
             let current_readiness = Ready::from_usize(current);
             let new = f(current_readiness);
 
             let new_tick = match tick {
                 Tick::Set => {
+                    // 设置tick
                     let current = TICK.unpack(current);
                     current.wrapping_add(1) % (TICK.max_value() + 1)
                 }
                 Tick::Clear(t) => {
                     if TICK.unpack(current) as u8 != t {
+                        // 尝试使用旧事件来清除准备状态
                         // Trying to clear readiness with an old event!
                         return;
                     }
@@ -256,12 +272,14 @@ impl ScheduledIo {
     /// lock is released, and the wakers are notified. Because there may be more
     /// than 32 wakers to notify, if the stack array fills up, the lock is
     /// released, the array is cleared, and the iteration continues.
+    /// 通知所有已注册对`ready`感兴趣的waker
     pub(super) fn wake(&self, ready: Ready) {
         let mut wakers = WakeList::new();
 
         let mut waiters = self.waiters.lock();
 
         // check for AsyncRead slot
+        // 检测可读
         if ready.is_readable() {
             if let Some(waker) = waiters.reader.take() {
                 wakers.push(waker);
@@ -269,13 +287,16 @@ impl ScheduledIo {
         }
 
         // check for AsyncWrite slot
+        // 检测可写
         if ready.is_writable() {
             if let Some(waker) = waiters.writer.take() {
                 wakers.push(waker);
             }
         }
 
+        // 唤醒所有waker
         'outer: loop {
+            // 过滤对ready不感兴趣的waker
             let mut iter = waiters.list.drain_filter(|w| ready.satisfies(w.interest));
 
             while wakers.can_push() {
@@ -323,6 +344,7 @@ impl ScheduledIo {
     /// These are to support `AsyncRead` and `AsyncWrite` polling methods,
     /// which cannot use the `async fn` version. This uses reserved reader
     /// and writer slots.
+    /// 轮询给定方向的就绪事件
     pub(super) fn poll_readiness(
         &self,
         cx: &mut Context<'_>,
@@ -343,6 +365,7 @@ impl ScheduledIo {
 
             // Avoid cloning the waker if one is already stored that matches the
             // current task.
+            // 如果已经存储了与当前任务匹配的waker，则避免克隆waker
             match slot {
                 Some(existing) => {
                     if !existing.will_wake(cx.waker()) {
@@ -356,6 +379,7 @@ impl ScheduledIo {
 
             // Try again, in case the readiness was changed while we were
             // taking the waiters lock
+            // 重试
             let curr = self.readiness.load(Acquire);
             let ready = direction.mask() & Ready::from_usize(READINESS.unpack(curr));
             let is_shutdown = SHUTDOWN.unpack(curr) != 0;
@@ -368,6 +392,7 @@ impl ScheduledIo {
             } else if ready.is_empty() {
                 Poll::Pending
             } else {
+                // 就绪事件
                 Poll::Ready(ReadyEvent {
                     tick: TICK.unpack(curr) as u8,
                     ready,
@@ -375,6 +400,7 @@ impl ScheduledIo {
                 })
             }
         } else {
+            // 就绪事件
             Poll::Ready(ReadyEvent {
                 tick: TICK.unpack(curr) as u8,
                 ready,
@@ -386,6 +412,7 @@ impl ScheduledIo {
     pub(crate) fn clear_readiness(&self, event: ReadyEvent) {
         // This consumes the current readiness state **except** for closed
         // states. Closed states are excluded because they are final states.
+        // 已关闭状态被排除在外,因为它们是最终状态
         let mask_no_closed = event.ready - Ready::READ_CLOSED - Ready::WRITE_CLOSED;
         self.set_readiness(Tick::Clear(event.tick), |curr| curr - mask_no_closed);
     }
@@ -408,6 +435,7 @@ unsafe impl Sync for ScheduledIo {}
 
 impl ScheduledIo {
     /// An async version of `poll_readiness` which uses a linked list of wakers.
+    /// `poll_readiness` 的异步版本,使用唤醒程序链接列表.
     pub(crate) async fn readiness(&self, interest: Interest) -> ReadyEvent {
         self.readiness_fut(interest).await
     }
@@ -475,6 +503,7 @@ impl Future for Readiness<'_> {
 
                     if !ready.is_empty() || is_shutdown {
                         // Currently ready!
+                        // 有就绪事件
                         let tick = TICK.unpack(curr) as u8;
                         *state = State::Done;
                         return Poll::Ready(ReadyEvent {
@@ -485,6 +514,7 @@ impl Future for Readiness<'_> {
                     }
 
                     // Wasn't ready, take the lock (and check again while locked).
+                    // 再次检查
                     let mut waiters = scheduled_io.waiters.lock();
 
                     let curr = scheduled_io.readiness.load(SeqCst);
@@ -511,6 +541,7 @@ impl Future for Readiness<'_> {
                     // Not ready even after locked, insert into list...
 
                     // Safety: called while locked
+                    // 保存waker
                     unsafe {
                         (*waiter.get()).waker = Some(cx.waker().clone());
                     }
@@ -518,6 +549,7 @@ impl Future for Readiness<'_> {
                     // Insert the waiter into the linked list
                     //
                     // safety: pointers from `UnsafeCell` are never null.
+                    // 插入waker列表
                     waiters
                         .list
                         .push_front(unsafe { NonNull::new_unchecked(waiter.get()) });
@@ -529,6 +561,7 @@ impl Future for Readiness<'_> {
                     // `notify.waiters`). In order to access the waker fields,
                     // we must hold the lock.
 
+                    // 获取waker的列表
                     let waiters = scheduled_io.waiters.lock();
 
                     // Safety: called while locked
@@ -536,13 +569,16 @@ impl Future for Readiness<'_> {
 
                     if w.is_ready {
                         // Our waker has been notified.
+                        // 已经发送通知
                         *state = State::Done;
                     } else {
                         // Update the waker, if necessary.
+                        // 判断是否需要更新waker
                         if !w.waker.as_ref().unwrap().will_wake(cx.waker()) {
                             w.waker = Some(cx.waker().clone());
                         }
 
+                        // 继续挂起
                         return Poll::Pending;
                     }
 
@@ -586,6 +622,7 @@ impl Drop for Readiness<'_> {
         let mut waiters = self.scheduled_io.waiters.lock();
 
         // Safety: `waiter` is only ever stored in `waiters`
+        // 移除waiter
         unsafe {
             waiters
                 .list

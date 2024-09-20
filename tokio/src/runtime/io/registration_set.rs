@@ -8,6 +8,7 @@ use std::sync::atomic::Ordering::{Acquire, Release};
 use std::sync::Arc;
 
 pub(super) struct RegistrationSet {
+    // 等待删除的注册数量
     num_pending_release: AtomicUsize,
 }
 
@@ -17,12 +18,14 @@ pub(super) struct Synced {
     is_shutdown: bool,
 
     // List of all registrations tracked by the set
+    // 跟踪的所有注册列表
     registrations: LinkedList<Arc<ScheduledIo>, ScheduledIo>,
 
     // Registrations that are pending drop. When a `Registration` is dropped, it
     // stores its `ScheduledIo` in this list. The I/O driver is responsible for
     // dropping it. This ensures the `ScheduledIo` is not freed while it can
     // still be included in an I/O event.
+    // 等待删除的注册
     pending_release: Vec<Arc<ScheduledIo>>,
 }
 
@@ -46,10 +49,12 @@ impl RegistrationSet {
     }
 
     /// Returns `true` if there are registrations that need to be released
+    /// 返回true表示有注册需要释放
     pub(super) fn needs_release(&self) -> bool {
         self.num_pending_release.load(Acquire) != 0
     }
 
+    // 申请一个ScheduleIo
     pub(super) fn allocate(&self, synced: &mut Synced) -> io::Result<Arc<ScheduledIo>> {
         if synced.is_shutdown {
             return Err(io::Error::new(
@@ -68,6 +73,7 @@ impl RegistrationSet {
 
     // Returns `true` if the caller should unblock the I/O driver to purge
     // registrations pending release.
+    // 如果调用者应解除对 I/O 驱动程序的阻塞以清除待发布的注册,则返回 `true`.
     pub(super) fn deregister(&self, synced: &mut Synced, registration: &Arc<ScheduledIo>) -> bool {
         // Kind of arbitrary, but buffering 16 `ScheduledIo`s doesn't seem like much
         const NOTIFY_AFTER: usize = 16;

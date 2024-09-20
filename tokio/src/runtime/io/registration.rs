@@ -47,9 +47,12 @@ cfg_io_driver! {
         /// Handle to the associated runtime.
         ///
         /// TODO: this can probably be moved into `ScheduledIo`.
+        ///
+        /// 相关的运行时句柄
         handle: scheduler::Handle,
 
         /// Reference to state stored by the driver.
+        /// 引用驱动程序存储的状态
         shared: Arc<ScheduledIo>,
     }
 }
@@ -69,6 +72,8 @@ impl Registration {
     ///
     /// - `Ok` if the registration happened successfully
     /// - `Err` if an error was encountered during registration
+    ///
+    /// 将 I/O 资源注册到反应器
     #[track_caller]
     pub(crate) fn new_with_interest_and_handle(
         io: &mut impl Source,
@@ -96,6 +101,7 @@ impl Registration {
     /// no longer result in notifications getting sent for this registration.
     ///
     /// `Err` is returned if an error is encountered.
+    /// 从与其关联的反应器中注销 I/O 资源
     pub(crate) fn deregister(&mut self, io: &mut impl Source) -> io::Result<()> {
         self.handle().deregister_source(&self.shared, io)
     }
@@ -106,12 +112,14 @@ impl Registration {
 
     // Uses the poll path, requiring the caller to ensure mutual exclusion for
     // correctness. Only the last task to call this function is notified.
+    // 只有调用此函数的最后一个任务才会收到通知
     pub(crate) fn poll_read_ready(&self, cx: &mut Context<'_>) -> Poll<io::Result<ReadyEvent>> {
         self.poll_ready(cx, Direction::Read)
     }
 
     // Uses the poll path, requiring the caller to ensure mutual exclusion for
     // correctness. Only the last task to call this function is notified.
+    // 只有调用此函数的最后一个任务才会收到通知
     pub(crate) fn poll_write_ready(&self, cx: &mut Context<'_>) -> Poll<io::Result<ReadyEvent>> {
         self.poll_ready(cx, Direction::Write)
     }
@@ -141,6 +149,7 @@ impl Registration {
     ///
     /// If called with a task context, notify the task when a new event is
     /// received.
+    /// 轮询 I/O 资源的`direction`就绪流上的事件
     fn poll_ready(
         &self,
         cx: &mut Context<'_>,
@@ -159,6 +168,7 @@ impl Registration {
         Poll::Ready(Ok(ev))
     }
 
+    // 就绪后运行闭包函数
     fn poll_io<R>(
         &self,
         cx: &mut Context<'_>,
@@ -188,6 +198,7 @@ impl Registration {
         let ev = self.shared.ready_event(interest);
 
         // Don't attempt the operation if the resource is not ready.
+        // 如果资源尚未准备好,请不要尝试该操作
         if ev.ready.is_empty() {
             return Err(io::ErrorKind::WouldBlock.into());
         }
