@@ -34,6 +34,7 @@ impl Receiver {
     /// shutdown signal is received.
     ///
     /// If the timeout has elapsed, it returns `false`, otherwise it returns `true`.
+    /// 阻塞当前线程,直到所有 `Sender` 句柄都丢弃.
     pub(crate) fn wait(&mut self, timeout: Option<Duration>) -> bool {
         use crate::runtime::context::try_enter_blocking_region;
 

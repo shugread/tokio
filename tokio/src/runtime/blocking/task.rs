@@ -3,18 +3,21 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Converts a function to a future that completes on poll.
+/// 将函数转换为在轮询时完成的Future
 pub(crate) struct BlockingTask<T> {
     func: Option<T>,
 }
 
 impl<T> BlockingTask<T> {
     /// Initializes a new blocking task from the given function.
+    /// 从给定函数初始化一个新的阻塞任务
     pub(crate) fn new(func: T) -> BlockingTask<T> {
         BlockingTask { func: Some(func) }
     }
 }
 
 // The closure `F` is never pinned
+// 闭包 `F` 永远不会被固定
 impl<T> Unpin for BlockingTask<T> {}
 
 impl<T, R> Future for BlockingTask<T>

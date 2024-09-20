@@ -15,6 +15,7 @@ use std::io;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+// 阻塞池
 pub(crate) struct BlockingPool {
     spawner: Spawner,
     shutdown_rx: shutdown::Receiver,
@@ -74,27 +75,35 @@ impl SpawnerMetrics {
 
 struct Inner {
     /// State shared between worker threads.
+    /// 工作线程之间共享状态.
     shared: Mutex<Shared>,
 
     /// Pool threads wait on this.
+    /// 池线程等待此操作.
     condvar: Condvar,
 
     /// Spawned threads use this name.
+    /// 生成线程名称
     thread_name: ThreadNameFn,
 
     /// Spawned thread stack size.
+    /// 线程栈大小
     stack_size: Option<usize>,
 
     /// Call after a thread starts.
+    /// 线程开始回调
     after_start: Option<Callback>,
 
     /// Call before a thread stops.
+    /// 线程停止回调
     before_stop: Option<Callback>,
 
     // Maximum number of threads.
+    // 最大线程数
     thread_cap: usize,
 
     // Customizable wait timeout.
+    // 超时时间
     keep_alive: Duration,
 
     // Metrics about the pool.
@@ -134,9 +143,11 @@ pub(crate) enum Mandatory {
 
 pub(crate) enum SpawnError {
     /// Pool is shutting down and the task was not scheduled
+    /// 池正在关闭,并且未安排任务
     ShuttingDown,
     /// There are no worker threads available to take the task
     /// and the OS failed to spawn a new one
+    /// 没有可用的工作线程来执行任务和系统分配线程失败
     NoThreads(io::Error),
 }
 
@@ -173,6 +184,7 @@ const KEEP_ALIVE: Duration = Duration::from_secs(10);
 /// Runs the provided function on an executor dedicated to blocking operations.
 /// Tasks will be scheduled as non-mandatory, meaning they may not get executed
 /// in case of runtime shutdown.
+/// 阻塞NonMandatory任务, 关闭时直接关闭
 #[track_caller]
 #[cfg_attr(target_os = "wasi", allow(dead_code))]
 pub(crate) fn spawn_blocking<F, R>(func: F) -> JoinHandle<R>
@@ -193,6 +205,7 @@ cfg_fs! {
     /// operations. Tasks will be scheduled as mandatory, meaning they are
     /// guaranteed to run unless a shutdown is already taking place. In case a
     /// shutdown is already taking place, `None` will be returned.
+    /// 调度Mandatory类型的阻塞任务, 等待任务运行再关闭
     pub(crate) fn spawn_mandatory_blocking<F, R>(func: F) -> Option<JoinHandle<R>>
     where
         F: FnOnce() -> R + Send + 'static,
@@ -206,6 +219,7 @@ cfg_fs! {
 // ===== impl BlockingPool =====
 
 impl BlockingPool {
+    // 创建阻塞池
     pub(crate) fn new(builder: &Builder, thread_cap: usize) -> BlockingPool {
         let (shutdown_tx, shutdown_rx) = shutdown::channel();
         let keep_alive = builder.keep_alive.unwrap_or(KEEP_ALIVE);
@@ -246,6 +260,8 @@ impl BlockingPool {
         // The function can be called multiple times. First, by explicitly
         // calling `shutdown` then by the drop handler calling `shutdown`. This
         // prevents shutting down twice.
+        // 该函数可以多次调用.
+        // 首先,通过显式调用 `shutdown`,然后由 drop handler 调用 `shutdown`.这可以防止两次关闭.
         if shared.shutdown {
             return;
         }
@@ -351,6 +367,7 @@ impl Spawner {
         }
     }
 
+    // 调度任务
     #[track_caller]
     pub(crate) fn spawn_blocking_inner<F, R>(
         &self,
@@ -405,14 +422,17 @@ impl Spawner {
             return Err(SpawnError::ShuttingDown);
         }
 
+        // 压入任务
         shared.queue.push_back(task);
         self.inner.metrics.inc_queue_depth();
 
         if self.inner.metrics.num_idle_threads() == 0 {
             // No threads are able to process the task.
+            // 没有空闲线程
 
             if self.inner.metrics.num_threads() == self.inner.thread_cap {
                 // At max number of threads
+                // 达到最大线程容量
             } else {
                 assert!(shared.shutdown_tx.is_some());
                 let shutdown_tx = shared.shutdown_tx.clone();
@@ -420,10 +440,13 @@ impl Spawner {
                 if let Some(shutdown_tx) = shutdown_tx {
                     let id = shared.worker_thread_index;
 
+                    // 开启新线程
                     match self.spawn_thread(shutdown_tx, rt, id) {
                         Ok(handle) => {
                             self.inner.metrics.inc_num_threads();
+                            // 增加使用
                             shared.worker_thread_index += 1;
+                            // 保存线程句柄
                             shared.worker_threads.insert(id, handle);
                         }
                         Err(ref e)
@@ -433,6 +456,8 @@ impl Spawner {
                             // OS temporarily failed to spawn a new thread.
                             // The task will be picked up eventually by a currently
                             // busy thread.
+                            // 操作系统暂时无法创建新线程.
+                            // 该任务最终将由当前繁忙的线程接手.
                         }
                         Err(e) => {
                             // The OS refused to spawn the thread and there is no thread
@@ -448,8 +473,11 @@ impl Spawner {
             // exactly. Thread libraries may generate spurious
             // wakeups, this counter is used to keep us in a
             // consistent state.
+            // 空闲线程减少1
             self.inner.metrics.dec_num_idle_threads();
+            // 通知数量加1
             shared.num_notify += 1;
+            // 通知一个线程
             self.inner.condvar.notify_one();
         }
 
@@ -472,6 +500,7 @@ impl Spawner {
 
         builder.spawn(move || {
             // Only the reference should be moved into the closure
+            // 在新线程执行
             let _enter = rt.enter();
             rt.inner.blocking_spawner().inner.run(id);
             drop(shutdown_tx);
@@ -502,7 +531,9 @@ fn is_temporary_os_thread_error(error: &io::Error) -> bool {
 }
 
 impl Inner {
+    // 运行阻塞任务
     fn run(&self, worker_thread_id: usize) {
+        // 运行开始的回调
         if let Some(f) = &self.after_start {
             f();
         }
@@ -512,6 +543,7 @@ impl Inner {
 
         'main: loop {
             // BUSY
+            // 获取任务运行, 直到所有任务运行完
             while let Some(task) = shared.queue.pop_front() {
                 self.metrics.dec_queue_depth();
                 drop(shared);
@@ -521,29 +553,35 @@ impl Inner {
             }
 
             // IDLE
+            // 线程空闲
             self.metrics.inc_num_idle_threads();
 
             while !shared.shutdown {
+                // 没有关闭, 带超时的挂起
                 let lock_result = self.condvar.wait_timeout(shared, self.keep_alive).unwrap();
 
                 shared = lock_result.0;
                 let timeout_result = lock_result.1;
 
                 if shared.num_notify != 0 {
-                    // We have received a legitimate wakeup,
+                    // 收到唤醒, 跳出内层循环
+                    // we have received a legitimate wakeup,
                     // acknowledge it by decrementing the counter
-                    // and transition to the BUSY state.
+                    // and transition to the busy state.
                     shared.num_notify -= 1;
                     break;
                 }
 
                 // Even if the condvar "timed out", if the pool is entering the
                 // shutdown phase, we want to perform the cleanup logic.
+                // 超时且阻塞池未关闭
                 if !shared.shutdown && timeout_result.timed_out() {
                     // We'll join the prior timed-out thread's JoinHandle after dropping the lock.
                     // This isn't done when shutting down, because the thread calling shutdown will
                     // handle joining everything.
+                    // 移除当前线程
                     let my_handle = shared.worker_threads.remove(&worker_thread_id);
+                    // 替换前一个退出的线程
                     join_on_thread = std::mem::replace(&mut shared.last_exiting_thread, my_handle);
 
                     break 'main;
@@ -554,6 +592,7 @@ impl Inner {
 
             if shared.shutdown {
                 // Drain the queue
+                // 清空队列
                 while let Some(task) = shared.queue.pop_front() {
                     self.metrics.dec_queue_depth();
                     drop(shared);
@@ -574,6 +613,7 @@ impl Inner {
         }
 
         // Thread exit
+        // 线程退出
         self.metrics.dec_num_threads();
 
         // num_idle should now be tracked exactly, panic
@@ -596,6 +636,7 @@ impl Inner {
         }
 
         if let Some(handle) = join_on_thread {
+            // 等待前一个线程退出
             let _ = handle.join();
         }
     }

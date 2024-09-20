@@ -9,6 +9,7 @@ use crate::runtime::Handle;
 ///
 /// We avoid storing the task by forgetting it in `bind` and re-materializing it
 /// in `release`.
+/// 阻塞轮询Future
 pub(crate) struct BlockingSchedule {
     #[cfg(feature = "test-util")]
     handle: Handle,
