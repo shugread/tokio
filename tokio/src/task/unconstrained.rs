@@ -3,6 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+// 不受约束的任务
 pin_project! {
     /// Future for the [`unconstrained`](unconstrained) method.
     #[cfg_attr(docsrs, doc(cfg(feature = "rt")))]

@@ -51,6 +51,7 @@ use crate::util::IdleNotifiedSet;
 ///     }
 /// }
 /// ```
+/// 在 Tokio 运行时生成的任务集合.
 #[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
 pub struct JoinSet<T> {
     inner: IdleNotifiedSet<JoinHandle<T>>,
@@ -70,6 +71,7 @@ pub struct Builder<'a, T> {
 
 impl<T> JoinSet<T> {
     /// Create a new `JoinSet`.
+    /// 创建集合
     pub fn new() -> Self {
         Self {
             inner: IdleNotifiedSet::new(),
@@ -129,6 +131,7 @@ impl<T: 'static> JoinSet<T> {
     /// This method panics if called outside of a Tokio runtime.
     ///
     /// [`AbortHandle`]: crate::task::AbortHandle
+    /// 插入任务
     #[track_caller]
     pub fn spawn<F>(&mut self, task: F) -> AbortHandle
     where
@@ -148,6 +151,7 @@ impl<T: 'static> JoinSet<T> {
     /// `JoinSet`.
     ///
     /// [`AbortHandle`]: crate::task::AbortHandle
+    /// 插入指定handle的任务
     #[track_caller]
     pub fn spawn_on<F>(&mut self, task: F, handle: &Handle) -> AbortHandle
     where
@@ -172,6 +176,7 @@ impl<T: 'static> JoinSet<T> {
     ///
     /// [`LocalSet`]: crate::task::LocalSet
     /// [`AbortHandle`]: crate::task::AbortHandle
+    /// 插入本地任务
     #[track_caller]
     pub fn spawn_local<F>(&mut self, task: F) -> AbortHandle
     where
@@ -192,6 +197,7 @@ impl<T: 'static> JoinSet<T> {
     /// [`LocalSet`]: crate::task::LocalSet
     /// [`AbortHandle`]: crate::task::AbortHandle
     /// [`spawn_local`]: Self::spawn_local
+    /// 插入本地任务
     #[track_caller]
     pub fn spawn_local_on<F>(&mut self, task: F, local_set: &LocalSet) -> AbortHandle
     where
@@ -237,6 +243,7 @@ impl<T: 'static> JoinSet<T> {
     /// This method panics if called outside of a Tokio runtime.
     ///
     /// [`AbortHandle`]: crate::task::AbortHandle
+    /// 调度阻塞任务
     #[track_caller]
     pub fn spawn_blocking<F>(&mut self, f: F) -> AbortHandle
     where
@@ -267,6 +274,7 @@ impl<T: 'static> JoinSet<T> {
         let mut entry = self.inner.insert_idle(jh);
 
         // Set the waker that is notified when the task completes.
+        // 设置任务完成时通知的唤醒器.
         entry.with_value_and_context(|jh, ctx| jh.set_join_waker(ctx.waker()));
         abort
     }
@@ -280,6 +288,7 @@ impl<T: 'static> JoinSet<T> {
     /// This method is cancel safe. If `join_next` is used as the event in a `tokio::select!`
     /// statement and some other branch completes first, it is guaranteed that no tasks were
     /// removed from this `JoinSet`.
+    /// 等待集合中的某个任务完成并返回其输出.
     pub async fn join_next(&mut self) -> Option<Result<T, JoinError>> {
         crate::future::poll_fn(|cx| self.poll_join_next(cx)).await
     }
@@ -309,6 +318,7 @@ impl<T: 'static> JoinSet<T> {
     /// Tries to join one of the tasks in the set that has completed and return its output.
     ///
     /// Returns `None` if there are no completed tasks, or if the set is empty.
+    /// 如果没有完成的任务或者集合为空,则返回`无`.
     pub fn try_join_next(&mut self) -> Option<Result<T, JoinError>> {
         // Loop over all notified `JoinHandle`s to find one that's ready, or until none are left.
         loop {
@@ -451,6 +461,7 @@ impl<T: 'static> JoinSet<T> {
     ///
     /// This does not remove the tasks from the `JoinSet`. To wait for the tasks to complete
     /// cancellation, you should call `join_next` in a loop until the `JoinSet` is empty.
+    /// 中止此`JoinSet`上的所有任务.
     pub fn abort_all(&mut self) {
         self.inner.for_each(|jh| jh.abort());
     }
@@ -459,6 +470,7 @@ impl<T: 'static> JoinSet<T> {
     ///
     /// The tasks removed by this call will continue to run in the background even if the `JoinSet`
     /// is dropped.
+    /// 从这个`JoinSet`中删除所有任务而不中止它们.
     pub fn detach_all(&mut self) {
         self.inner.drain(drop);
     }
@@ -512,6 +524,8 @@ impl<T: 'static> JoinSet<T> {
             // A JoinHandle generally won't emit a wakeup without being ready unless
             // the coop limit has been reached. We yield to the executor in this
             // case.
+            // JoinHandle 通常不会在未准备好的情况下发出唤醒,
+            // 除非已达到 coop 限制.在这种情况下,我们会让位于执行器.
             cx.waker().wake_by_ref();
             Poll::Pending
         }

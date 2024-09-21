@@ -57,6 +57,7 @@ use std::{future::Future, io};
 /// [`spawn_local`]: Builder::spawn_local
 /// [`spawn`]: Builder::spawn
 /// [`spawn_blocking`]: Builder::spawn_blocking
+/// 用于配置新任务属性的工厂.
 #[derive(Default, Debug)]
 #[cfg_attr(docsrs, doc(cfg(all(tokio_unstable, feature = "tracing"))))]
 pub struct Builder<'a> {
@@ -65,11 +66,13 @@ pub struct Builder<'a> {
 
 impl<'a> Builder<'a> {
     /// Creates a new task builder.
+    /// 创建一个新的任务生成器.
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Assigns a name to the task which will be spawned.
+    /// 为将要生成的任务分配一个名称.
     pub fn name(&self, name: &'a str) -> Self {
         Self { name: Some(name) }
     }
@@ -82,6 +85,7 @@ impl<'a> Builder<'a> {
     ///
     /// See [`task::spawn`](crate::task::spawn()) for
     /// more details.
+    /// 将新任务加入运行时
     #[track_caller]
     pub fn spawn<Fut>(self, future: Fut) -> io::Result<JoinHandle<Fut::Output>>
     where
@@ -104,6 +108,7 @@ impl<'a> Builder<'a> {
     ///
     /// [runtime handle]: crate::runtime::Handle
     /// [`Handle::spawn`]: crate::runtime::Handle::spawn
+    /// 在提供的 [handler]上生成一个任务.
     #[track_caller]
     pub fn spawn_on<Fut>(self, future: Fut, handle: &Handle) -> io::Result<JoinHandle<Fut::Output>>
     where
@@ -133,6 +138,7 @@ impl<'a> Builder<'a> {
     ///
     /// [`task::spawn_local`]: crate::task::spawn_local
     /// [`LocalSet`]: crate::task::LocalSet
+    /// 调度到本地任务
     #[track_caller]
     pub fn spawn_local<Fut>(self, future: Fut) -> io::Result<JoinHandle<Fut::Output>>
     where
@@ -155,6 +161,7 @@ impl<'a> Builder<'a> {
     ///
     /// [`LocalSet::spawn_local`]: crate::task::LocalSet::spawn_local
     /// [`LocalSet`]: crate::task::LocalSet
+    /// 在LocalSet中生成任务
     #[track_caller]
     pub fn spawn_local_on<Fut>(
         self,
@@ -176,6 +183,7 @@ impl<'a> Builder<'a> {
     ///
     /// See [`task::spawn_blocking`](crate::task::spawn_blocking)
     /// for more details.
+    /// 调度阻塞任务
     #[track_caller]
     pub fn spawn_blocking<Function, Output>(
         self,
@@ -195,6 +203,7 @@ impl<'a> Builder<'a> {
     ///
     /// [runtime handle]: crate::runtime::Handle
     /// [`Handle::spawn_blocking`]: crate::runtime::Handle::spawn_blocking
+    /// 在给定handle上调度阻塞任务
     #[track_caller]
     pub fn spawn_blocking_on<Function, Output>(
         self,

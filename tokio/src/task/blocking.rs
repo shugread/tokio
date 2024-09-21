@@ -70,6 +70,12 @@ cfg_rt_multi_thread! {
     /// This function panics if called from a [`current_thread`] runtime.
     ///
     /// [`current_thread`]: fn@crate::runtime::Builder::new_current_thread
+    ///
+    /// 在当前线程上运行提供的阻塞函数,而不阻塞执行器.
+    /// 此函数不能在 [`current_thread`] 运行时中使用
+    /// 因为在这种情况下没有其他工作线程可以交接任务到.
+    /// 另一方面,允许在运行时之外调用该函数.
+    /// 在这种情况下,`block_in_place` 只会正常调用提供的闭包.
     #[track_caller]
     pub fn block_in_place<F, R>(f: F) -> R
     where
@@ -198,6 +204,7 @@ cfg_rt! {
     /// worker.await.unwrap();
     /// # }
     /// ```
+    /// 在可以接受阻塞的线程上运行提供的闭包.
     #[track_caller]
     pub fn spawn_blocking<F, R>(f: F) -> JoinHandle<R>
     where

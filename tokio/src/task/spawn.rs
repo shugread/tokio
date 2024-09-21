@@ -161,6 +161,7 @@ cfg_rt! {
     /// ```text
     /// error[E0391]: cycle detected when processing `main`
     /// ```
+    /// 生成一个新的异步任务
     #[track_caller]
     pub fn spawn<F>(future: F) -> JoinHandle<F::Output>
     where

@@ -215,11 +215,14 @@ cfg_rt! {
     /// [`Runtime::block_on`]: method@crate::runtime::Runtime::block_on
     /// [`task::spawn_local`]: fn@spawn_local
     /// [`mpsc`]: mod@crate::sync::mpsc
+    /// 在同一线程上执行的一组任务.
     pub struct LocalSet {
         /// Current scheduler tick.
+        /// 当前调度程序tick.
         tick: Cell<u8>,
 
         /// State available from thread-local.
+        /// 可从线程本地获得状态.
         context: Rc<Context>,
 
         /// This type should not be Send.
@@ -228,16 +231,20 @@ cfg_rt! {
 }
 
 /// State available from the thread-local.
+/// 当前线程状态
 struct Context {
     /// State shared between threads.
+    /// 线程之间共享状态.
     shared: Arc<Shared>,
 
     /// True if a task panicked without being handled and the local set is
     /// configured to shutdown on unhandled panic.
+    /// 如果某个任务未经处理就崩溃了,并且本地集被配置为在未处理的崩溃时关闭,则为 True.
     unhandled_panic: Cell<bool>,
 }
 
 /// `LocalSet` state shared between threads.
+/// LocalSet共享状态
 struct Shared {
     /// # Safety
     ///
@@ -246,9 +253,11 @@ struct Shared {
     local_state: LocalState,
 
     /// Remote run queue sender.
+    /// 远程运行队列发送者.
     queue: Mutex<Option<VecDeque<task::Notified<Arc<Shared>>>>>,
 
     /// Wake the `LocalSet` task.
+    /// 唤醒LocalSet任务
     waker: AtomicWaker,
 
     /// How to respond to unhandled task panics.
@@ -258,14 +267,18 @@ struct Shared {
 
 /// Tracks the `LocalSet` state that must only be accessed from the thread that
 /// created the `LocalSet`.
+/// 跟踪只能从创建 `LocalSet` 的线程访问的 `LocalSet` 状态.
 struct LocalState {
     /// The `ThreadId` of the thread that owns the `LocalSet`.
+    /// LocalSet所在的线程
     owner: ThreadId,
 
     /// Local run queue sender and receiver.
+    /// 本地运行队列发送者和接收者.
     local_queue: UnsafeCell<VecDeque<task::Notified<Arc<Shared>>>>,
 
     /// Collection of all active tasks spawned onto this executor.
+    /// 此执行器上产生的所有活动任务的集合.
     owned: LocalOwnedTasks<Arc<Shared>>,
 }
 
@@ -291,6 +304,8 @@ struct LocalData {
 impl LocalData {
     /// Should be called except when we call `LocalSet::enter`.
     /// Especially when we poll a `LocalSet`.
+    /// 除了当我们调用`LocalSet::enter`时应该被调用.
+    /// 特别是当我们轮询`LocalSet`时.
     #[must_use = "dropping this guard will reset the entered state"]
     fn enter(&self, ctx: Rc<Context>) -> LocalDataEnterGuard<'_> {
         let ctx = self.ctx.replace(Some(ctx));
@@ -304,6 +319,7 @@ impl LocalData {
 }
 
 /// A guard for `LocalData::enter()`
+/// `LocalData::enter()` 的守卫
 struct LocalDataEnterGuard<'a> {
     local_data_ref: &'a LocalData,
     ctx: Option<Rc<Context>>,
@@ -312,6 +328,7 @@ struct LocalDataEnterGuard<'a> {
 
 impl<'a> Drop for LocalDataEnterGuard<'a> {
     fn drop(&mut self) {
+        // 恢复原有的ctx
         self.local_data_ref.ctx.set(self.ctx.take());
         self.local_data_ref
             .wake_on_schedule
@@ -361,6 +378,7 @@ cfg_rt! {
     ///
     /// [`LocalSet`]: struct@crate::task::LocalSet
     /// [`tokio::spawn`]: fn@crate::task::spawn
+    /// 调度本地任务
     #[track_caller]
     pub fn spawn_local<F>(future: F) -> JoinHandle<F::Output>
     where
@@ -388,15 +406,19 @@ cfg_rt! {
 }
 
 /// Initial queue capacity.
+/// 初始化队列容量
 const INITIAL_CAPACITY: usize = 64;
 
 /// Max number of tasks to poll per tick.
+/// 每个刻度轮询的最大任务数.
 const MAX_TASKS_PER_TICK: usize = 61;
 
 /// How often it check the remote queue first.
+/// 检查远程队列的频率.
 const REMOTE_FIRST_INTERVAL: u8 = 31;
 
 /// Context guard for `LocalSet`
+/// `LocalSet` 的上下文守卫
 pub struct LocalEnterGuard {
     ctx: Option<Rc<Context>>,
 
@@ -406,6 +428,7 @@ pub struct LocalEnterGuard {
     wake_on_schedule: bool,
 }
 
+// 恢复上下文
 impl Drop for LocalEnterGuard {
     fn drop(&mut self) {
         CURRENT.with(
@@ -428,6 +451,7 @@ impl fmt::Debug for LocalEnterGuard {
 
 impl LocalSet {
     /// Returns a new local task set.
+    /// 创建一个新的本地任务集合
     pub fn new() -> LocalSet {
         let owner = context::thread_id().expect("cannot create LocalSet during thread shutdown");
 
@@ -457,6 +481,7 @@ impl LocalSet {
     /// context you are inside.
     ///
     /// [`spawn_local`]: fn@crate::task::spawn_local
+    /// 进入此`LocalSet`的上下文.
     pub fn enter(&self) -> LocalEnterGuard {
         CURRENT.with(
             |LocalData {
@@ -515,6 +540,7 @@ impl LocalSet {
     /// }
     /// ```
     /// [`spawn_local`]: fn@spawn_local
+    /// 调度一个本地任务
     #[track_caller]
     pub fn spawn_local<F>(&self, future: F) -> JoinHandle<F::Output>
     where
@@ -586,6 +612,7 @@ impl LocalSet {
     /// [`Runtime::block_on`]: method@crate::runtime::Runtime::block_on
     /// [in-place blocking]: fn@crate::task::block_in_place
     /// [`spawn_blocking`]: fn@crate::task::spawn_blocking
+    /// 运行一个阻塞任务
     #[track_caller]
     #[cfg(feature = "rt")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
@@ -628,6 +655,7 @@ impl LocalSet {
     ///
     /// [`spawn_local`]: fn@spawn_local
     /// [awaiting the local set]: #awaiting-a-localset
+    /// 在本地集合上运行未来直至完成,并返回其输出.
     pub async fn run_until<F>(&self, future: F) -> F::Output
     where
         F: Future,
@@ -670,12 +698,14 @@ impl LocalSet {
         // Spawning via the free fn `spawn` does not require this, as it can
         // only be called from *within* a future executing on the `LocalSet` —
         // in that case, the `LocalSet` must already be awake.
+        // 因为一个任务是从 `LocalSet` 之外生成的,如果 `LocalSet` 尚未被唤醒,则唤醒它来执行新任务.
         self.context.shared.waker.wake();
         handle
     }
 
     /// Ticks the scheduler, returning whether the local future needs to be
     /// notified again.
+    /// ticks调度程序，返回本地Future是否需要再次通知.
     fn tick(&self) -> bool {
         for _ in 0..MAX_TASKS_PER_TICK {
             // Make sure we didn't hit an unhandled panic
@@ -702,10 +732,12 @@ impl LocalSet {
     }
 
     fn next_task(&self) -> Option<task::LocalNotified<Arc<Shared>>> {
+        // 增加tick
         let tick = self.tick.get();
         self.tick.set(tick.wrapping_add(1));
 
         let task = if tick % REMOTE_FIRST_INTERVAL == 0 {
+            // 先获取远程任务再获取本地任务
             self.context
                 .shared
                 .queue
@@ -714,6 +746,7 @@ impl LocalSet {
                 .and_then(|queue| queue.pop_front())
                 .or_else(|| self.pop_local())
         } else {
+            // 先获取本地任务,再回去远程任务
             self.pop_local().or_else(|| {
                 self.context
                     .shared
@@ -732,6 +765,7 @@ impl LocalSet {
         })
     }
 
+    // 返回本地任务
     fn pop_local(&self) -> Option<task::Notified<Arc<Shared>>> {
         unsafe {
             // Safety: because the `LocalSet` itself is `!Send`, we know we are
@@ -750,6 +784,7 @@ impl LocalSet {
 
     /// This method is like `with`, but it just calls `f` without setting the thread-local if that
     /// fails.
+    /// 此方法类似于`with`,但如果失败,它只会调用`f`,而不会设置线程本地.
     fn with_if_possible<T>(&self, f: impl FnOnce() -> T) -> T {
         let mut f = Some(f);
 
@@ -871,11 +906,14 @@ impl Future for LocalSet {
 
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
         // Register the waker before starting to work
+        // 开始工作前注册waker
         self.context.shared.waker.register_by_ref(cx.waker());
 
         if self.with(|| self.tick()) {
             // If `tick` returns true, we need to notify the local future again:
             // there are still tasks remaining in the run queue.
+            // 如果 `tick` 返回 true,需要再次通知本地未来:
+            // 运行队列中仍有剩余任务.
             cx.waker().wake_by_ref();
             Poll::Pending
 
@@ -883,11 +921,14 @@ impl Future for LocalSet {
         // `LocalSet` is `!Send`, this is safe.
         } else if unsafe { self.context.shared.local_state.owned_is_empty() } {
             // If the scheduler has no remaining futures, we're done!
+            // 如果调度程序没有剩余的Future,我们就完成了!
             Poll::Ready(())
         } else {
             // There are still futures in the local set, but we've polled all the
             // futures in the run queue. Therefore, we can just return Pending
             // since the remaining futures will be woken from somewhere else.
+            // 本地集合中仍有 Future,但我们已经轮询了运行队列中的所有 Future.
+            // 因此,我们可以返回 Pending,因为剩余的 Future 将从其他地方被唤醒.
             Poll::Pending
         }
     }
@@ -966,6 +1007,7 @@ impl Context {
                 .bind(future, self.shared.clone(), id)
         };
 
+        // 调度任务
         if let Some(notified) = notified {
             self.shared.schedule(notified);
         }
@@ -999,6 +1041,8 @@ impl<T: Future> Future for RunUntil<'_, T> {
             if me.local_set.tick() {
                 // If `tick` returns `true`, we need to notify the local future again:
                 // there are still tasks remaining in the run queue.
+                // 如果 `tick` 返回 `true`,我们需要再次通知本地未来:
+                // 运行队列中仍有剩余的任务.
                 cx.waker().wake_by_ref();
             }
 
@@ -1018,11 +1062,13 @@ impl Shared {
                 Some(cx) if cx.shared.ptr_eq(self) && !localdata.wake_on_schedule.get() => unsafe {
                     // Safety: if the current `LocalSet` context points to this
                     // `LocalSet`, then we are on the thread that owns it.
+                    // 推送本地任务
                     cx.shared.local_state.task_push_back(task);
                 },
 
                 // We are on the thread that owns the `LocalSet`, so we can
                 // wake to the local queue.
+                // 我们处于拥有 `LocalSet` 的线程上,因此我们可以唤醒本地队列.
                 _ if context::thread_id().ok() == Some(self.local_state.owner) => {
                     unsafe {
                         // Safety: we just checked that the thread ID matches
@@ -1031,11 +1077,13 @@ impl Shared {
                     }
                     // We still have to wake the `LocalSet`, because it isn't
                     // currently being polled.
+                    // 我们仍然必须唤醒 `LocalSet`,因为它目前没有被轮询.
                     self.waker.wake();
                 }
 
                 // We are *not* on the thread that owns the `LocalSet`, so we
                 // have to wake to the remote queue.
+                // 我们不在拥有 `LocalSet` 的线程上,所以我们必须唤醒远程队列.
                 _ => {
                     // First, check whether the queue is still there (if not, the
                     // LocalSet is dropped). Then push to it if so, and if not,
@@ -1105,6 +1153,7 @@ impl task::Schedule for Arc<Shared> {
 }
 
 impl LocalState {
+    // 弹出第一个任务
     unsafe fn task_pop_front(&self) -> Option<task::Notified<Arc<Shared>>> {
         // The caller ensures it is called from the same thread that owns
         // the LocalSet.
@@ -1113,6 +1162,7 @@ impl LocalState {
         self.local_queue.with_mut(|ptr| (*ptr).pop_front())
     }
 
+    // 在末尾添加任务
     unsafe fn task_push_back(&self, task: task::Notified<Arc<Shared>>) {
         // The caller ensures it is called from the same thread that owns
         // the LocalSet.
@@ -1121,6 +1171,7 @@ impl LocalState {
         self.local_queue.with_mut(|ptr| (*ptr).push_back(task));
     }
 
+    // 获取任务队列
     unsafe fn take_local_queue(&self) -> VecDeque<task::Notified<Arc<Shared>>> {
         // The caller ensures it is called from the same thread that owns
         // the LocalSet.
@@ -1129,6 +1180,7 @@ impl LocalState {
         self.local_queue.with_mut(|ptr| std::mem::take(&mut (*ptr)))
     }
 
+    // 移除任务
     unsafe fn task_remove(&self, task: &Task<Arc<Shared>>) -> Option<Task<Arc<Shared>>> {
         // The caller ensures it is called from the same thread that owns
         // the LocalSet.

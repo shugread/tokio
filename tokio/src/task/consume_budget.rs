@@ -23,6 +23,7 @@ use std::task::{ready, Poll};
 ///     sum
 /// }
 /// ```
+/// 如果任务的合作预算已耗尽,则消耗一个预算单位并将执行返回到 Tokio 运行时.
 #[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
 pub async fn consume_budget() {
     let mut status = Poll::Pending;

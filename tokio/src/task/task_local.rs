@@ -31,6 +31,7 @@ use std::{fmt, mem, thread};
 /// information.
 ///
 /// [`tokio::task::LocalKey`]: struct@crate::task::LocalKey
+/// 定义任务本地变量
 #[macro_export]
 #[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
 macro_rules! task_local {
@@ -127,6 +128,7 @@ impl<T: 'static> LocalKey<T> {
     ///
     /// [`with`]: fn@Self::with
     /// [`try_with`]: fn@Self::try_with
+    /// 在Future中可以访问任务本地变量
     pub fn scope<F>(&'static self, value: T, f: F) -> TaskLocalFuture<T, F>
     where
         F: Future,
@@ -164,6 +166,7 @@ impl<T: 'static> LocalKey<T> {
     ///
     /// [`with`]: fn@Self::with
     /// [`try_with`]: fn@Self::try_with
+    /// 将值`T`设置为闭包`F`的任务本地值.
     #[track_caller]
     pub fn sync_scope<F, R>(&'static self, value: T, f: F) -> R
     where
@@ -185,6 +188,7 @@ impl<T: 'static> LocalKey<T> {
             slot: &'a mut Option<T>,
         }
 
+        // 恢复任务变量
         impl<'a, T: 'static> Drop for Guard<'a, T> {
             fn drop(&mut self) {
                 // This should not panic.
@@ -206,6 +210,7 @@ impl<T: 'static> LocalKey<T> {
             }
         }
 
+        // 将原来的任务变量修改成当前值
         self.inner.try_with(|inner| {
             inner
                 .try_borrow_mut()
@@ -226,6 +231,7 @@ impl<T: 'static> LocalKey<T> {
     /// # Panics
     ///
     /// This function will panic if the task local doesn't have a value set.
+    /// 访问当前任务本地并运行提供的闭包.
     #[track_caller]
     pub fn with<F, R>(&'static self, f: F) -> R
     where

@@ -170,7 +170,8 @@ pub(crate) struct Shared {
     /// Global task queue used for:
     ///  1. Submit work to the scheduler while **not** currently on a worker thread.
     ///  2. Submit work to the scheduler when a worker run queue is saturated
-    ///  全局任务注入队列,任务可以在不属于任何工作线程的情况下被注入调度器.
+    ///
+    /// 全局任务注入队列,任务可以在不属于任何工作线程的情况下被注入调度器.
     pub(super) inject: inject::Shared<Arc<Handle>>,
 
     /// Coordinates idle workers
@@ -498,6 +499,7 @@ where
     if had_entered {
         // Unset the current task's budget. Blocking sections are not
         // constrained by task budgets.
+        // 取消设置当前任务的预算.阻塞部分不受任务预算的限制.
         let _reset = Reset {
             take_core,
             budget: coop::stop(),

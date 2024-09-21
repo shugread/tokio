@@ -35,6 +35,7 @@ use std::task::{ready, Context, Poll};
 /// which order the runtime polls your tasks in.
 ///
 /// [`tokio::select!`]: macro@crate::select
+/// 主动让出执行权
 #[cfg_attr(docsrs, doc(cfg(feature = "rt")))]
 pub async fn yield_now() {
     /// Yield implementation
@@ -49,11 +50,13 @@ pub async fn yield_now() {
             ready!(crate::trace::trace_leaf(cx));
 
             if self.yielded {
+                // 已经轮询过了
                 return Poll::Ready(());
             }
 
             self.yielded = true;
 
+            // 注册最后唤醒
             context::defer(cx.waker());
 
             Poll::Pending
