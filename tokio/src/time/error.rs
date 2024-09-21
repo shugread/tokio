@@ -22,6 +22,18 @@ use std::fmt;
 ///   way to do this would be dropping the future that issued the timer operation.
 ///
 /// [shed load]: https://en.wikipedia.org/wiki/Load_Shedding
+/// /// 计时器实现遇到的错误。
+///
+/// 目前,可能发生两种不同的错误:
+///
+/// * 当尝试执行计时器操作但计时器实例已被删除时,会发生 `shutdown`.
+///   在这种情况下,操作将永远无法完成,并返回 `shutdown` 错误.
+///   这是一个永久性错误,即一旦观察到此错误,计时器操作将永远不会成功.
+///
+/// * 当尝试执行计时器操作但计时器实例当前正在处理其最大数量的未完成睡眠实例时,会发生 `at_capacity`.
+///   在这种情况下,操作无法在当前时刻执行,并返回 `at_capacity`.
+///   这是一个暂时性错误,即在未来的某个时间点,如果再次尝试操作,它可能会成功.
+///
 #[derive(Debug, Copy, Clone)]
 pub struct Error(Kind);
 
@@ -43,6 +55,7 @@ impl From<Kind> for Error {
 ///
 /// This error is returned when a timeout expires before the function was able
 /// to finish.
+/// `Timeout` 返回的错误.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Elapsed(());
 
@@ -55,31 +68,37 @@ pub(crate) enum InsertError {
 
 impl Error {
     /// Creates an error representing a shutdown timer.
+    /// 创建一个代表关闭计时器的错误.
     pub fn shutdown() -> Error {
         Error(Kind::Shutdown)
     }
 
     /// Returns `true` if the error was caused by the timer being shutdown.
+    /// 如果错误是由计时器关闭引起的,则返回`true`.
     pub fn is_shutdown(&self) -> bool {
         matches!(self.0, Kind::Shutdown)
     }
 
     /// Creates an error representing a timer at capacity.
+    /// 创建计数器容量错误
     pub fn at_capacity() -> Error {
         Error(Kind::AtCapacity)
     }
 
     /// Returns `true` if the error was caused by the timer being at capacity.
+    /// 如果错误是由计时器关闭引起的,则返回`true`.
     pub fn is_at_capacity(&self) -> bool {
         matches!(self.0, Kind::AtCapacity)
     }
 
     /// Creates an error representing a misconfigured timer.
+    /// 创建一个表示错误配置的计时器的错误.
     pub fn invalid() -> Error {
         Error(Kind::Invalid)
     }
 
     /// Returns `true` if the error was caused by the timer being misconfigured.
+    /// 如果错误是由于计时器配置错误导致的,则返回`true`.
     pub fn is_invalid(&self) -> bool {
         matches!(self.0, Kind::Invalid)
     }

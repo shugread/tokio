@@ -30,6 +30,7 @@ use std::time::Duration;
 /// This type wraps the inner `std` variant and is used to align the Tokio
 /// clock for uses of `now()`. This can be useful for testing where you can
 /// take advantage of `time::pause()` and `time::advance()`.
+/// tokio的Instant包装类型
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct Instant {
     std: std::time::Instant,
@@ -50,10 +51,13 @@ impl Instant {
     }
 
     /// Create a `tokio::time::Instant` from a `std::time::Instant`.
+    /// 创建`tokio::time::Instant`
     pub fn from_std(std: std::time::Instant) -> Instant {
         Instant { std }
     }
 
+    // 大约 30 年后.API 不提供获取最大`Instant`或将未来特定日期转换为即时的方法.
+    // macOS 上 1000 年溢出,FreeBSD 上 100 年溢出.
     pub(crate) fn far_future() -> Instant {
         // Roughly 30 years from now.
         // API does not provide a way to obtain max `Instant`
@@ -69,6 +73,7 @@ impl Instant {
 
     /// Returns the amount of time elapsed from another instant to this one, or
     /// zero duration if that instant is later than this one.
+    /// 返回从另一时刻到当前时刻经过的时间量,如果另一时刻晚于当前时刻,则返回零持续时间.
     pub fn duration_since(&self, earlier: Instant) -> Duration {
         self.std.saturating_duration_since(earlier.std)
     }
@@ -90,6 +95,7 @@ impl Instant {
     ///     println!("{:?}", now.checked_duration_since(new_now)); // None
     /// }
     /// ```
+    /// 返回从另一时刻到当前时刻经过的时间量,如果另一时刻晚于当前时刻,则返回 None.
     pub fn checked_duration_since(&self, earlier: Instant) -> Option<Duration> {
         self.std.checked_duration_since(earlier.std)
     }
@@ -111,6 +117,7 @@ impl Instant {
     ///     println!("{:?}", now.saturating_duration_since(new_now)); // 0ns
     /// }
     /// ```
+    /// 返回从另一时刻到当前时刻经过的时间量,如果另一时刻晚于当前时刻,则返回零持续时间.
     pub fn saturating_duration_since(&self, earlier: Instant) -> Duration {
         self.std.saturating_duration_since(earlier.std)
     }
@@ -131,6 +138,7 @@ impl Instant {
     ///     assert!(instant.elapsed() >= three_secs);
     /// }
     /// ```
+    /// 返回自此`Instant`创建以来经过的时间量
     pub fn elapsed(&self) -> Duration {
         Instant::now().saturating_duration_since(*self)
     }

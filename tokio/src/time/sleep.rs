@@ -57,6 +57,7 @@ use std::task::{self, ready, Poll};
 /// [`Builder::enable_time`]: crate::runtime::Builder::enable_time
 /// [`Builder::enable_all`]: crate::runtime::Builder::enable_all
 // Alias for old name in 0.x
+// 休眠到指定时间
 #[cfg_attr(docsrs, doc(alias = "delay_until"))]
 #[track_caller]
 pub fn sleep_until(deadline: Instant) -> Sleep {
@@ -119,6 +120,7 @@ pub fn sleep_until(deadline: Instant) -> Sleep {
 /// [`Builder::enable_time`]: crate::runtime::Builder::enable_time
 /// [`Builder::enable_all`]: crate::runtime::Builder::enable_all
 // Alias for old name in 0.x
+// 休眠指定时间间隔
 #[cfg_attr(docsrs, doc(alias = "delay_for"))]
 #[cfg_attr(docsrs, doc(alias = "wait"))]
 #[track_caller]
@@ -228,6 +230,7 @@ pin_project! {
         inner: Inner,
 
         // The link between the `Sleep` instance and the timer that drives it.
+        // `Sleep`实例和驱动它的计时器之间的链接.
         #[pin]
         entry: TimerEntry,
     }
@@ -247,6 +250,7 @@ cfg_not_trace! {
 }
 
 impl Sleep {
+    // 创建Sleep
     #[cfg_attr(not(all(tokio_unstable, feature = "tracing")), allow(unused_variables))]
     #[track_caller]
     pub(crate) fn new_timeout(
@@ -305,11 +309,13 @@ impl Sleep {
         Sleep { inner, entry }
     }
 
+    // 最大超时
     pub(crate) fn far_future(location: Option<&'static Location<'static>>) -> Sleep {
         Self::new_timeout(Instant::far_future(), location)
     }
 
     /// Returns the instant at which the future will complete.
+    /// 返回Future完成的时刻.
     pub fn deadline(&self) -> Instant {
         self.entry.deadline()
     }
@@ -317,6 +323,7 @@ impl Sleep {
     /// Returns `true` if `Sleep` has elapsed.
     ///
     /// A `Sleep` instance is elapsed when the requested duration has elapsed.
+    /// 如果`睡眠`已结束,则返回`true`.
     pub fn is_elapsed(&self) -> bool {
         self.entry.is_elapsed()
     }
@@ -350,6 +357,7 @@ impl Sleep {
     /// See also the top-level examples.
     ///
     /// [`Pin::as_mut`]: fn@std::pin::Pin::as_mut
+    /// 将`Sleep`实例重置为新的截止时间.
     pub fn reset(self: Pin<&mut Self>, deadline: Instant) {
         self.reset_inner(deadline);
     }
@@ -362,6 +370,7 @@ impl Sleep {
     /// without having it registered. This is required in e.g. the
     /// [`crate::time::Interval`] where we want to reset the internal [Sleep]
     /// without having it wake up the last task that polled it.
+    /// 将`Sleep`实例重置为新的截止时间,而无需重新注册以将其唤醒.
     pub(crate) fn reset_without_reregister(self: Pin<&mut Self>, deadline: Instant) {
         let mut me = self.project();
         me.entry.as_mut().reset(deadline, false);
@@ -413,6 +422,7 @@ impl Sleep {
         #[cfg(any(not(tokio_unstable), not(feature = "tracing")))]
         let coop = ready!(crate::runtime::coop::poll_proceed(cx));
 
+        // 轮询定时, 如果没有注册, 在轮询时会注册
         let result = me.entry.poll_elapsed(cx).map(move |r| {
             coop.made_progress();
             r
@@ -445,6 +455,7 @@ impl Future for Sleep {
         let _ao_span = self.inner.ctx.async_op_span.clone().entered();
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let _ao_poll_span = self.inner.ctx.async_op_poll_span.clone().entered();
+        // 轮询定时器,直到完成
         match ready!(self.as_mut().poll_elapsed(cx)) {
             Ok(()) => Poll::Ready(()),
             Err(e) => panic!("timer error: {}", e),

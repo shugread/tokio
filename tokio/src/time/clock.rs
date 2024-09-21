@@ -6,6 +6,12 @@
 //! `test-util` feature flag is enabled, the values returned for `now()` are
 //! configurable.
 
+//! 时间抽象的来源。
+//!
+//! 默认情况下,使用 `std::time::Instant::now()`.但是,
+//! 当`test-util` 功能标志启用时,`now()` 返回的值是
+//! 可配置的.
+//!
 cfg_not_test_util! {
     use crate::time::{Instant};
 
@@ -35,6 +41,7 @@ cfg_test_util! {
 
     cfg_rt! {
         #[track_caller]
+        // 使用当前上下文中的clock
         fn with_clock<R>(f: impl FnOnce(Option<&Clock>) -> Result<R, &'static str>) -> R {
             use crate::runtime::Handle;
 
@@ -62,6 +69,7 @@ cfg_test_util! {
     }
 
     /// A handle to a source of time.
+    /// 时间源的句柄.
     #[derive(Debug)]
     pub(crate) struct Clock {
         inner: Mutex<Inner>,
@@ -74,20 +82,25 @@ cfg_test_util! {
     // A static is used so we can avoid accessing the thread-local as well. The
     // `std` AtomicBool is used directly because loom does not support static
     // atomics.
+    // 用于跟踪时钟是否暂停
     static DID_PAUSE_CLOCK: StdAtomicBool = StdAtomicBool::new(false);
 
     #[derive(Debug)]
     struct Inner {
         /// True if the ability to pause time is enabled.
+        /// 启用暂停时间的功能.
         enable_pausing: bool,
 
         /// Instant to use as the clock's base instant.
+        /// 用作时钟基准时间.
         base: std::time::Instant,
 
         /// Instant at which the clock was last unfrozen.
+        /// 时钟最后一次解冻的时刻.
         unfrozen: Option<std::time::Instant>,
 
         /// Number of `inhibit_auto_advance` calls still in effect.
+        /// `inhibit_auto_advance` 调用次数.
         auto_advance_inhibit_count: usize,
     }
 
@@ -126,6 +139,12 @@ cfg_test_util! {
     ///
     /// [`Sleep`]: crate::time::Sleep
     /// [`advance`]: crate::time::advance
+    ///
+    /// 暂停时间.
+    ///
+    /// `Instant::now()` 的当前值被保存,并且所有后续对 `Instant::now()` 的调用都将返回保存的值.
+    /// 保存的值可以通过 [`advance`] 更改,也可以在运行时没有工作要做时通过时间自动前进更改.
+    /// 这只会影响 Tokio 中的 `Instant` 类型,并且 std 中的 `Instant` 继续正常工作.
     #[track_caller]
     pub fn pause() {
         with_clock(|maybe_clock| {
@@ -145,6 +164,7 @@ cfg_test_util! {
     ///
     /// Panics if time is not frozen or if called from outside of the Tokio
     /// runtime.
+    /// 保存恢复的时间
     #[track_caller]
     pub fn resume() {
         with_clock(|maybe_clock| {
@@ -209,6 +229,7 @@ cfg_test_util! {
     }
 
     /// Returns the current instant, factoring in frozen time.
+    /// 返回当前时刻,考虑冻结时间.
     pub(crate) fn now() -> Instant {
         if !DID_PAUSE_CLOCK.load(Ordering::Acquire) {
             return Instant::from_std(std::time::Instant::now());
@@ -247,6 +268,7 @@ cfg_test_util! {
             clock
         }
 
+        // 暂停时间
         pub(crate) fn pause(&self) -> Result<(), &'static str> {
             let mut inner = self.inner.lock();
 
@@ -257,12 +279,15 @@ cfg_test_util! {
             }
 
             // Track that we paused the clock
+            // 跟踪暂停时钟
             DID_PAUSE_CLOCK.store(true, Ordering::Release);
 
+            // 最后一次冻结到当前的时间
             let elapsed = match inner.unfrozen.as_ref() {
                 Some(v) => v.elapsed(),
                 None => return Err("time is already frozen")
             };
+            // 基础时间
             inner.base += elapsed;
             inner.unfrozen = None;
 
@@ -285,6 +310,7 @@ cfg_test_util! {
             inner.unfrozen.is_none() && inner.auto_advance_inhibit_count == 0
         }
 
+        // 增加基础时间
         pub(crate) fn advance(&self, duration: Duration) -> Result<(), &'static str> {
             let mut inner = self.inner.lock();
 

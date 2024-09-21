@@ -70,6 +70,7 @@ use std::task::{ready, Context, Poll};
 ///
 /// [`sleep`]: crate::time::sleep()
 /// [`.tick().await`]: Interval::tick
+/// 间隔记时
 #[track_caller]
 pub fn interval(period: Duration) -> Interval {
     assert!(period > Duration::new(0, 0), "`period` must be non-zero.");
@@ -105,12 +106,14 @@ pub fn interval(period: Duration) -> Interval {
 ///     // approximately 70ms have elapsed.
 /// }
 /// ```
+/// 在给定时间创建间隔计时
 #[track_caller]
 pub fn interval_at(start: Instant, period: Duration) -> Interval {
     assert!(period > Duration::new(0, 0), "`period` must be non-zero.");
     internal_interval_at(start, period, trace::caller_location())
 }
 
+/// 在给定时间创建间隔计时
 #[cfg_attr(not(all(tokio_unstable, feature = "tracing")), allow(unused_variables))]
 fn internal_interval_at(
     start: Instant,
@@ -179,6 +182,7 @@ fn internal_interval_at(
 /// Note that because the executor cannot guarantee exact precision with timers,
 /// these strategies will only apply when the delay is greater than 5
 /// milliseconds.
+/// 定义 [`Interval`] 错过滴答时的行为.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MissedTickBehavior {
     /// Ticks as fast as possible until caught up.
@@ -239,6 +243,7 @@ pub enum MissedTickBehavior {
     ///
     /// [`Delay`]: MissedTickBehavior::Delay
     /// [`Skip`]: MissedTickBehavior::Skip
+    /// 尽可能快地滴答作响,直到被赶上.
     Burst,
 
     /// Tick at multiples of `period` from when [`tick`] was called, rather than
@@ -287,6 +292,7 @@ pub enum MissedTickBehavior {
     /// [`Burst`]: MissedTickBehavior::Burst
     /// [`Skip`]: MissedTickBehavior::Skip
     /// [`tick`]: Interval::tick
+    /// 从调用 [`tick`] 时开始以 `period` 的倍数进行计时,而不是从 `start` 开始.
     Delay,
 
     /// Skips missed ticks and tick on the next multiple of `period` from
@@ -334,16 +340,19 @@ pub enum MissedTickBehavior {
     ///
     /// [`Burst`]: MissedTickBehavior::Burst
     /// [`Delay`]: MissedTickBehavior::Delay
+    /// 跳过错过的刻度并从`start`开始刻度到下一个`period`的倍数.
     Skip,
 }
 
 impl MissedTickBehavior {
     /// If a tick is missed, this method is called to determine when the next tick should happen.
+    /// 如果错过了一个滴答,则调用此方法来确定下一个滴答何时发生.
     fn next_timeout(&self, timeout: Instant, now: Instant, period: Duration) -> Instant {
         match self {
-            Self::Burst => timeout + period,
-            Self::Delay => now + period,
+            Self::Burst => timeout + period, // 追赶原来的时间线
+            Self::Delay => now + period,     // 在当前时间按照原来的周期运行
             Self::Skip => {
+                // 跳过超时,按照原来的时间线运行
                 now + period
                     - Duration::from_nanos(
                         ((now - timeout).as_nanos() % period.as_nanos())
@@ -392,12 +401,15 @@ impl Default for MissedTickBehavior {
 #[derive(Debug)]
 pub struct Interval {
     /// Future that completes the next time the `Interval` yields a value.
+    /// 下一次`Interval`产生值时完成的Future.
     delay: Pin<Box<Sleep>>,
 
     /// The duration between values yielded by `Interval`.
+    /// `Interval` 产生的值之间的间隔时间.
     period: Duration,
 
     /// The strategy `Interval` should use when a tick is missed.
+    /// 当错过滴答时应该使用策略`Interval`.
     missed_tick_behavior: MissedTickBehavior,
 
     #[cfg(all(tokio_unstable, feature = "tracing"))]
@@ -462,11 +474,14 @@ impl Interval {
     /// wakeup.
     pub fn poll_tick(&mut self, cx: &mut Context<'_>) -> Poll<Instant> {
         // Wait for the delay to be done
+        // 等待延迟完成
         ready!(Pin::new(&mut self.delay).poll(cx));
 
         // Get the time when we were scheduled to tick
+        // 获取我们计划滴答的时间
         let timeout = self.delay.deadline();
 
+        // 当前时间
         let now = Instant::now();
 
         // If a tick was not missed, and thus we are being called before the
@@ -477,6 +492,7 @@ impl Interval {
         // schedule the next tick according to how the user specified with
         // `MissedTickBehavior`
         let next = if now > timeout + Duration::from_millis(5) {
+            // 错过tick
             self.missed_tick_behavior
                 .next_timeout(timeout, now, self.period)
         } else {
@@ -488,6 +504,7 @@ impl Interval {
         // When we arrive here, the internal delay returned `Poll::Ready`.
         // Reset the delay but do not register it. It should be registered with
         // the next call to [`poll_tick`].
+        // 重置延迟但不注册
         self.delay.as_mut().reset_without_reregister(next);
 
         // Return the time when we were scheduled to tick
@@ -522,6 +539,7 @@ impl Interval {
     ///     // approximately 250ms have elapsed.
     /// }
     /// ```
+    /// 重置间隔以完成当前时间之后的一个周期
     pub fn reset(&mut self) {
         self.delay.as_mut().reset(Instant::now() + self.period);
     }
@@ -554,6 +572,7 @@ impl Interval {
     ///     // approximately 150ms have elapsed.
     /// }
     /// ```
+    /// 立即重置间隔.
     pub fn reset_immediately(&mut self) {
         self.delay.as_mut().reset(Instant::now());
     }
@@ -587,6 +606,7 @@ impl Interval {
     ///     // approximately 170ms have elapsed.
     /// }
     /// ```
+    /// 重置到给定时间
     pub fn reset_after(&mut self, after: Duration) {
         self.delay.as_mut().reset(Instant::now() + after);
     }
@@ -623,21 +643,25 @@ impl Interval {
     ///     // approximately 180ms have elapsed.
     /// }
     /// ```
+    /// 重置到给定时间
     pub fn reset_at(&mut self, deadline: Instant) {
         self.delay.as_mut().reset(deadline);
     }
 
     /// Returns the [`MissedTickBehavior`] strategy currently being used.
+    /// 获取错过tick的行为
     pub fn missed_tick_behavior(&self) -> MissedTickBehavior {
         self.missed_tick_behavior
     }
 
     /// Sets the [`MissedTickBehavior`] strategy that should be used.
+    /// 设置错过tick的行为
     pub fn set_missed_tick_behavior(&mut self, behavior: MissedTickBehavior) {
         self.missed_tick_behavior = behavior;
     }
 
     /// Returns the period of the interval.
+    /// 返回周期
     pub fn period(&self) -> Duration {
         self.period
     }

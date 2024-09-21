@@ -82,6 +82,7 @@ use std::task::{self, Poll};
 ///
 /// [`Builder::enable_time`]: crate::runtime::Builder::enable_time
 /// [`Builder::enable_all`]: crate::runtime::Builder::enable_all
+/// 超时任务
 #[track_caller]
 pub fn timeout<F>(duration: Duration, future: F) -> Timeout<F::IntoFuture>
 where
@@ -142,6 +143,7 @@ where
 /// }
 /// # }
 /// ```
+/// 给定时间的超时任务
 pub fn timeout_at<F>(deadline: Instant, future: F) -> Timeout<F::IntoFuture>
 where
     F: IntoFuture,
@@ -199,6 +201,7 @@ where
         let had_budget_before = coop::has_budget_remaining();
 
         // First, try polling the future
+        // 先检查Future是否完成
         if let Poll::Ready(v) = me.value.poll(cx) {
             return Poll::Ready(Ok(v));
         }
@@ -207,6 +210,7 @@ where
 
         let delay = me.delay;
 
+        // 检查是否超时
         let poll_delay = || -> Poll<Self::Output> {
             match delay.poll(cx) {
                 Poll::Ready(()) => Poll::Ready(Err(Elapsed::new())),
@@ -220,6 +224,8 @@ where
             // cases where the underlying future always exhausts the budget and
             // we never get a chance to evaluate whether the timeout was hit or
             // not.
+            // 如果底层 Future 耗尽了预算,使用不受约束的延迟来轮询.
+            // 这可以防止底层 Future 总是耗尽预算的病态情况,而永远没有机会评估是否达到了超时.
             coop::with_unconstrained(poll_delay)
         } else {
             poll_delay()
