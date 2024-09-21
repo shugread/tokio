@@ -12,6 +12,7 @@ use std::{fmt, mem, ops};
 ///
 /// [`write`]: method@crate::sync::RwLock::write
 /// [`RwLock`]: struct@crate::sync::RwLock
+/// 写锁守卫
 #[clippy::has_significant_drop]
 #[must_use = "if unused the RwLock will immediately unlock"]
 pub struct RwLockWriteGuard<'a, T: ?Sized> {

@@ -130,6 +130,7 @@ use std::{fmt, mem, ptr};
 /// [`std::sync::Mutex`]: struct@std::sync::Mutex
 /// [`Send`]: trait@std::marker::Send
 /// [`lock`]: method@Mutex::lock
+/// 互斥锁
 pub struct Mutex<T: ?Sized> {
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     resource_span: tracing::Span,
@@ -146,6 +147,7 @@ pub struct Mutex<T: ?Sized> {
 ///
 /// The lock is automatically released whenever the guard is dropped, at which
 /// point `lock` will succeed yet again.
+/// 持有的“Mutex”的句柄. 保护可以跨`.await`点持有,它是[`Send`].
 #[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct MutexGuard<'a, T: ?Sized> {
@@ -157,6 +159,7 @@ pub struct MutexGuard<'a, T: ?Sized> {
 }
 
 /// An owned handle to a held `Mutex`.
+/// 持有的 `Mutex` 的拥有句柄.
 ///
 /// This guard is only available from a `Mutex` that is wrapped in an [`Arc`]. It
 /// is identical to `MutexGuard`, except that rather than borrowing the `Mutex`,
@@ -185,6 +188,7 @@ pub struct OwnedMutexGuard<T: ?Sized> {
 /// This can be used to hold a subfield of the protected data.
 ///
 /// [`MutexGuard::map`]: method@MutexGuard::map
+/// 已通过 [`MutexGuard::map`] 应用函数的持有 `Mutex` 的句柄.
 #[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct MappedMutexGuard<'a, T: ?Sized> {
@@ -204,6 +208,7 @@ pub struct MappedMutexGuard<'a, T: ?Sized> {
 /// This can be used to hold a subfield of the protected data.
 ///
 /// [`OwnedMutexGuard::map`]: method@OwnedMutexGuard::map
+/// 已通过 [`OwnedMutexGuard::map`] 应用函数的持有 `Mutex` 的句柄.
 #[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct OwnedMappedMutexGuard<T: ?Sized, U: ?Sized = T> {
@@ -217,6 +222,7 @@ pub struct OwnedMappedMutexGuard<T: ?Sized, U: ?Sized = T> {
 
 /// A helper type used when taking apart a `MutexGuard` without running its
 /// Drop implementation.
+/// 在drop`MutexGuard`的时候不运行其 Drop 实现时使用的辅助类型.
 #[allow(dead_code)] // Unused fields are still used in Drop.
 struct MutexGuardInner<'a, T: ?Sized> {
     #[cfg(all(tokio_unstable, feature = "tracing"))]
@@ -226,6 +232,7 @@ struct MutexGuardInner<'a, T: ?Sized> {
 
 /// A helper type used when taking apart a `OwnedMutexGuard` without running
 /// its Drop implementation.
+/// 与`MutexGuardInner`类似
 struct OwnedMutexGuardInner<T: ?Sized> {
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     resource_span: tracing::Span,
@@ -289,6 +296,7 @@ where
 /// [`Mutex::try_lock`]: Mutex::try_lock
 /// [`RwLock::try_read`]: fn@super::RwLock::try_read
 /// [`RwLock::try_write`]: fn@super::RwLock::try_write
+/// 从 [`Mutex::try_lock`],[`RwLock::try_read`] 和 [`RwLock::try_write`] 函数返回的错误.
 #[derive(Debug)]
 pub struct TryLockError(pub(super) ());
 
@@ -431,6 +439,7 @@ impl<T: ?Sized> Mutex<T> {
     ///     *n = 2;
     /// }
     /// ```
+    /// 获取锁
     pub async fn lock(&self) -> MutexGuard<'_, T> {
         let acquire_fut = async {
             self.acquire().await;
@@ -648,6 +657,7 @@ impl<T: ?Sized> Mutex<T> {
         guard
     }
 
+    // 获取1个信号量
     async fn acquire(&self) {
         crate::trace::async_trace_leaf().await;
 
@@ -675,6 +685,7 @@ impl<T: ?Sized> Mutex<T> {
     /// # Ok(())
     /// # }
     /// ```
+    /// 尝试获取锁
     pub fn try_lock(&self) -> Result<MutexGuard<'_, T>, TryLockError> {
         match self.s.try_acquire(1) {
             Ok(()) => {

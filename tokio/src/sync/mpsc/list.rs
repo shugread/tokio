@@ -9,41 +9,55 @@ use std::ptr::NonNull;
 use std::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release};
 
 /// List queue transmit handle.
+/// 用于将消息推入队列
 pub(crate) struct Tx<T> {
     /// Tail in the `Block` mpmc list.
+    /// 指向链表中的最后一个块
     block_tail: AtomicPtr<Block<T>>,
 
     /// Position to push the next message. This references a block and offset
     /// into the block.
+    /// 当前要推入消息的位置
     tail_position: AtomicUsize,
 }
 
 /// List queue receive handle
+/// 用于从队列中弹出消息
 pub(crate) struct Rx<T> {
     /// Pointer to the block being processed.
+    /// 指向当前处理的块
     head: NonNull<Block<T>>,
 
     /// Next slot index to process.
+    /// 当前块中即将处理的槽位
     index: usize,
 
     /// Pointer to the next block pending release.
+    /// 指向待释放的下一个块
     free_head: NonNull<Block<T>>,
 }
 
 /// Return value of `Rx::try_pop`.
+/// 表示 Rx 端弹出消息的结果
 pub(crate) enum TryPopResult<T> {
     /// Successfully popped a value.
+    /// 成功弹出消息
     Ok(T),
     /// The channel is empty.
+    /// 队列为空
     Empty,
     /// The channel is empty and closed.
+    /// 队列已关闭
     Closed,
     /// The channel is not empty, but the first value is being written.
+    /// 当前消息正在写入
     Busy,
 }
 
+// 创建通道
 pub(crate) fn channel<T>() -> (Tx<T>, Rx<T>) {
     // Create the initial block shared between the tx and rx halves.
+    // 第一个块
     let initial_block = Block::new(0);
     let initial_block_ptr = Box::into_raw(initial_block);
 
@@ -65,9 +79,11 @@ pub(crate) fn channel<T>() -> (Tx<T>, Rx<T>) {
 
 impl<T> Tx<T> {
     /// Pushes a value into the list.
+    /// 向队列推入一条消息
     pub(crate) fn push(&self, value: T) {
         // First, claim a slot for the value. `Acquire` is used here to
         // synchronize with the `fetch_add` in `reclaim_blocks`.
+        // 分配一个槽位
         let slot_index = self.tail_position.fetch_add(1, Acquire);
 
         // Load the current block and write the value
@@ -83,6 +99,7 @@ impl<T> Tx<T> {
     ///
     /// Similar process as pushing a value, but instead of writing the value &
     /// setting the ready flag, the `TX_CLOSED` flag is set on the block.
+    /// 关闭
     pub(crate) fn close(&self) {
         // First, claim a slot for the value. This is the last slot that will be
         // claimed.
@@ -93,19 +110,24 @@ impl<T> Tx<T> {
         unsafe { block.as_ref().tx_close() }
     }
 
+    // 根据槽位搜索块
     fn find_block(&self, slot_index: usize) -> NonNull<Block<T>> {
         // The start index of the block that contains `index`.
+        // 块的索引
         let start_index = block::start_index(slot_index);
 
         // The index offset into the block
+        // 槽的索引
         let offset = block::offset(slot_index);
 
         // Load the current head of the block
+        // 加载当前块的头
         let mut block_ptr = self.block_tail.load(Acquire);
 
         let block = unsafe { &*block_ptr };
 
         // Calculate the distance between the tail ptr and the target block
+        // 发现距离当前块的距离
         let distance = block.distance(start_index);
 
         // Decide if this call to `find_block` should attempt to update the
@@ -117,6 +139,7 @@ impl<T> Tx<T> {
         // When set, as the routine walks the linked list, it attempts to update
         // `block_tail`. If the update cannot be performed, `try_updating_tail`
         // is unset.
+        // 决定对 `find_block` 的此调用是否应尝试更新`block_tail` 指针.
         let mut try_updating_tail = distance > offset;
 
         // Walk the linked list of blocks until the block with `start_index` is
@@ -125,9 +148,11 @@ impl<T> Tx<T> {
             let block = unsafe { &(*block_ptr) };
 
             if block.is_at_index(start_index) {
+                // 索引在当前块
                 return unsafe { NonNull::new_unchecked(block_ptr) };
             }
 
+            // 获取下一个块
             let next_block = block
                 .load_next(Acquire)
                 // There is no allocated next block, grow the linked list.
@@ -135,6 +160,7 @@ impl<T> Tx<T> {
 
             // If the block is **not** final, then the tail pointer cannot be
             // advanced any more.
+            // 块要存满数据,才会更新`block_tail`
             try_updating_tail &= block.is_final();
 
             if try_updating_tail {
@@ -152,6 +178,7 @@ impl<T> Tx<T> {
                 //
                 // Acquire is not needed as any "actual" value is not accessed.
                 // At this point, the linked list is walked to acquire blocks.
+                // 更新`block_tail`
                 if self
                     .block_tail
                     .compare_exchange(block_ptr, next_block.as_ptr(), Release, Relaxed)
@@ -161,6 +188,7 @@ impl<T> Tx<T> {
                     let tail_position = self.tail_position.fetch_add(0, Release);
 
                     unsafe {
+                        // 标记接收端可以释放块
                         block.tx_release(tail_position);
                     }
                 } else {
@@ -168,6 +196,7 @@ impl<T> Tx<T> {
                     // `block_tail` and this thread is falling behind.
                     //
                     // Stop trying to advance the tail pointer
+                    // 停止更新`block_tail`
                     try_updating_tail = false;
                 }
             }
@@ -178,6 +207,7 @@ impl<T> Tx<T> {
         }
     }
 
+    // 重用或释放block
     pub(crate) unsafe fn reclaim_block(&self, mut block: NonNull<Block<T>>) {
         // The block has been removed from the linked list and ownership
         // is reclaimed.
@@ -258,6 +288,7 @@ impl<T> Rx<T> {
     }
 
     /// Pops the next value off the queue.
+    /// 弹出值
     pub(crate) fn pop(&mut self, tx: &Tx<T>) -> Option<block::Read<T>> {
         // Advance `head`, if needed
         if !self.try_advancing_head() {
@@ -272,6 +303,7 @@ impl<T> Rx<T> {
             let ret = block.read(self.index);
 
             if let Some(block::Read::Value(..)) = ret {
+                // 获取到值, 增加index
                 self.index = self.index.wrapping_add(1);
             }
 
@@ -287,6 +319,7 @@ impl<T> Rx<T> {
     /// This can happen if the fully delivered message is behind another message
     /// that is in the middle of being written to the block, since the channel
     /// can't return the messages out of order.
+    /// 尝试弹出值
     pub(crate) fn try_pop(&mut self, tx: &Tx<T>) -> TryPopResult<T> {
         let tail_position = tx.tail_position.load(Acquire);
         let result = self.pop(tx);
@@ -302,13 +335,16 @@ impl<T> Rx<T> {
     /// Tries advancing the block pointer to the block referenced by `self.index`.
     ///
     /// Returns `true` if successful, `false` if there is no next block to load.
+    /// 尝试将块指针推进到`self.index`引用的块.
     fn try_advancing_head(&mut self) -> bool {
         let block_index = block::start_index(self.index);
 
         loop {
+            // 下一个块
             let next_block = {
                 let block = unsafe { self.head.as_ref() };
 
+                // 块指针指向`self.idnex`的块
                 if block.is_at_index(block_index) {
                     return true;
                 }
@@ -319,10 +355,12 @@ impl<T> Rx<T> {
             let next_block = match next_block {
                 Some(next_block) => next_block,
                 None => {
+                    // 下一个块是空
                     return false;
                 }
             };
 
+            // 推进`self.head`
             self.head = next_block;
 
             thread::yield_now();
@@ -340,11 +378,11 @@ impl<T> Rx<T> {
 
                 let required_index = match observed_tail_position {
                     Some(i) => i,
-                    None => return,
+                    None => return, // 不可释放
                 };
 
                 if required_index > self.index {
-                    return;
+                    return; // 还没读取到当前位置
                 }
 
                 // We may read the next pointer with `Relaxed` ordering as it is
@@ -354,10 +392,12 @@ impl<T> Rx<T> {
                 let next_block = block.as_ref().load_next(Relaxed);
 
                 // Update the free list head
+                // 更新free_head
                 self.free_head = next_block.unwrap();
 
                 // Push the emptied block onto the back of the queue, making it
                 // available to senders.
+                // 是否可以重用
                 tx.reclaim_block(block);
             }
 
@@ -367,6 +407,7 @@ impl<T> Rx<T> {
 
     /// Effectively `Drop` all the blocks. Should only be called once, when
     /// the list is dropping.
+    /// 释放块
     pub(super) unsafe fn free_blocks(&mut self) {
         debug_assert_ne!(self.free_head, NonNull::dangling());
 
@@ -380,6 +421,7 @@ impl<T> Rx<T> {
             self.head = NonNull::dangling();
         }
 
+        // 循环释放
         while let Some(block) = cur {
             cur = block.as_ref().load_next(Relaxed);
             drop(Box::from_raw(block.as_ptr()));

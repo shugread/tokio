@@ -23,6 +23,7 @@ type WaitList = LinkedList<Waiter, <Waiter as linked_list::Link>::Target>;
 type GuardedWaitList = GuardedLinkedList<Waiter, <Waiter as linked_list::Link>::Target>;
 
 /// Notifies a single task to wake up.
+/// 通知单个任务唤醒.
 ///
 /// `Notify` provides a basic mechanism to notify a single task of an event.
 /// `Notify` itself does not carry any data. Instead, it is to be used to signal
@@ -221,6 +222,7 @@ struct Waiter {
     /// Waiting task's waker. Depending on the value of `notification`,
     /// this field is either protected by the `waiters` lock in
     /// `Notify`, or it is exclusively owned by the enclosing `Waiter`.
+    /// 等待任务的waker
     waker: UnsafeCell<Option<Waker>>,
 
     /// Notification for this waiter. Uses 2 bits to store if and how was
@@ -229,6 +231,11 @@ struct Waiter {
     /// * if it's `None`, then `waker` is protected by the `waiters` lock.
     /// * if it's `Some`, then `waker` is exclusively owned by the
     ///   enclosing `Waiter` and can be accessed without locking.
+    ///
+    /// 通知此 waiter. 使用 2 位存储是否以及如何通知
+    /// 1 位用于存储是否使用 FIFO 或 LIFO 唤醒,并且其余部分未使用.
+    /// * 如果为 `None`,则 `waker` 受 `waiters` 锁保护.
+    /// * 如果为 `Some`,则 `waker` 由封闭的 `Waiter` 独占，无需锁定即可访问。
     notification: AtomicNotification,
 
     /// Should not be `Unpin`.
@@ -258,12 +265,15 @@ generate_addr_of_methods! {
 const NOTIFICATION_NONE: usize = 0b000;
 
 // Notification type used by `notify_one`.
+// `notify_one` 使用的通知类型.
 const NOTIFICATION_ONE: usize = 0b001;
 
 // Notification type used by `notify_last`.
+// `notify_last` 使用的通知类型.
 const NOTIFICATION_LAST: usize = 0b101;
 
 // Notification type used by `notify_waiters`.
+// `notify_waiters` 使用的通知类型.
 const NOTIFICATION_ALL: usize = 0b010;
 
 /// Notification for a `Waiter`.
@@ -279,6 +289,7 @@ impl AtomicNotification {
 
     /// Store-release a notification.
     /// This method should be called exactly once.
+    /// 保存通知类型
     fn store_release(&self, notification: Notification) {
         let data: usize = match notification {
             Notification::All => NOTIFICATION_ALL,
@@ -303,6 +314,7 @@ impl AtomicNotification {
     /// This method is used by a `Notified` future to consume the
     /// notification. It uses relaxed ordering and should be only
     /// used once the atomic notification is no longer shared.
+    /// 清除通知
     fn clear(&self) {
         self.0.store(NOTIFICATION_NONE, Relaxed);
     }
@@ -325,6 +337,8 @@ enum Notification {
 /// List used in `Notify::notify_waiters`. It wraps a guarded linked list
 /// and gates the access to it on `notify.waiters` mutex. It also empties
 /// the list on drop.
+/// `Notify::notify_waiters` 中使用的列表.它包装了一个受保护的链接列表,
+/// 并通过 `notify.waiters` 互斥锁控制对它的访问.它还会在删除时清空列表
 struct NotifyWaitersList<'a> {
     list: GuardedWaitList,
     is_empty: bool,
@@ -378,18 +392,22 @@ impl Drop for NotifyWaitersList<'_> {
 ///
 /// This future is fused, so once it has completed, any future calls to poll
 /// will immediately return `Poll::Ready`.
+/// [`Notify::notified()`] 返回的Future
 #[derive(Debug)]
 pub struct Notified<'a> {
     /// The `Notify` being received on.
     notify: &'a Notify,
 
     /// The current state of the receiving process.
+    /// 状态
     state: State,
 
     /// Number of calls to `notify_waiters` at the time of creation.
+    /// 创建时对`notify_waiters`的调用次数.
     notify_waiters_calls: usize,
 
     /// Entry in the waiter `LinkedList`.
+    /// 链表元素
     waiter: Waiter,
 }
 
@@ -408,30 +426,37 @@ const STATE_MASK: usize = (1 << NOTIFY_WAITERS_SHIFT) - 1;
 const NOTIFY_WAITERS_CALLS_MASK: usize = !STATE_MASK;
 
 /// Initial "idle" state.
+/// 空闲状态
 const EMPTY: usize = 0;
 
 /// One or more threads are currently waiting to be notified.
+/// 等待中
 const WAITING: usize = 1;
 
 /// Pending notification.
+/// 已经通知
 const NOTIFIED: usize = 2;
 
+// 设置状态
 fn set_state(data: usize, state: usize) -> usize {
     (data & NOTIFY_WAITERS_CALLS_MASK) | (state & STATE_MASK)
 }
 
+// 获取状态
 fn get_state(data: usize) -> usize {
     data & STATE_MASK
 }
 
+// `notify_waiters`的调用次数
 fn get_num_notify_waiters_calls(data: usize) -> usize {
     (data & NOTIFY_WAITERS_CALLS_MASK) >> NOTIFY_WAITERS_SHIFT
 }
-
+// 调用次数加1
 fn inc_num_notify_waiters_calls(data: usize) -> usize {
     data + (1 << NOTIFY_WAITERS_SHIFT)
 }
 
+// 给原子类型调用次数加1
 fn atomic_inc_num_notify_waiters_calls(data: &AtomicUsize) {
     data.fetch_add(1 << NOTIFY_WAITERS_SHIFT, SeqCst);
 }
@@ -528,6 +553,7 @@ impl Notify {
     ///     notify.notify_one();
     /// }
     /// ```
+    /// 创建一个等待通知的Future
     pub fn notified(&self) -> Notified<'_> {
         // we load the number of times notify_waiters
         // was called and store that in the future.
@@ -575,6 +601,7 @@ impl Notify {
     /// }
     /// ```
     // Alias for old name in 0.x
+    // 通知第一个等待者
     #[cfg_attr(docsrs, doc(alias = "notify"))]
     pub fn notify_one(&self) {
         self.notify_with_strategy(NotifyOneStrategy::Fifo);
@@ -589,6 +616,7 @@ impl Notify {
     /// examples.
     ///
     /// [`notify_one()`]: Notify::notify_one
+    /// 通知最后一个等待者
     pub fn notify_last(&self) {
         self.notify_with_strategy(NotifyOneStrategy::Lifo);
     }
@@ -598,6 +626,7 @@ impl Notify {
         let mut curr = self.state.load(SeqCst);
 
         // If the state is `EMPTY`, transition to `NOTIFIED` and return.
+        // 如果是空闲或已通知, 将状态设置为已通知
         while let EMPTY | NOTIFIED = get_state(curr) {
             // The compare-exchange from `NOTIFIED` -> `NOTIFIED` is intended. A
             // happens-before synchronization must happen between this atomic
@@ -613,7 +642,7 @@ impl Notify {
                 }
             }
         }
-
+        // 如果是空闲状态
         // There are waiters, the lock must be acquired to notify.
         let mut waiters = self.waiters.lock();
 
@@ -621,6 +650,7 @@ impl Notify {
         // transition out of WAITING while the lock is held.
         curr = self.state.load(SeqCst);
 
+        // 获取waker
         if let Some(waker) = notify_locked(&mut waiters, &self.state, curr, strategy) {
             drop(waiters);
             waker.wake();
@@ -659,6 +689,7 @@ impl Notify {
     ///     println!("received notifications");
     /// }
     /// ```
+    /// 通知所有等待的任务.
     pub fn notify_waiters(&self) {
         let mut waiters = self.waiters.lock();
 
@@ -669,6 +700,7 @@ impl Notify {
         if matches!(get_state(curr), EMPTY | NOTIFIED) {
             // There are no waiting tasks. All we need to do is increment the
             // number of times this method was called.
+            // 没有等待的任务, 增加notify_waiters的调用次数
             atomic_inc_num_notify_waiters_calls(&self.state);
             return;
         }
@@ -676,6 +708,7 @@ impl Notify {
         // Increment the number of times this method was called
         // and transition to empty.
         let new_state = set_state(inc_num_notify_waiters_calls(curr), EMPTY);
+        // 通知设置为空
         self.state.store(new_state, SeqCst);
 
         // It is critical for `GuardedLinkedList` safety that the guard node is
@@ -693,6 +726,7 @@ impl Notify {
         //   guard node after this function returns / panics.
         let mut list = NotifyWaitersList::new(std::mem::take(&mut *waiters), guard.as_ref(), self);
 
+        // 将waker移动到wakers,统一通知
         let mut wakers = WakeList::new();
         'outer: loop {
             while wakers.can_push() {
@@ -722,6 +756,7 @@ impl Notify {
 
             // One of the wakers may panic, but the remaining waiters will still
             // be unlinked from the list in `NotifyWaitersList` destructor.
+            // 唤醒所有waker
             wakers.wake_all();
 
             // Acquire the lock again.
@@ -752,8 +787,9 @@ fn notify_locked(
 ) -> Option<Waker> {
     match get_state(curr) {
         EMPTY | NOTIFIED => {
+            // 状态设置为已通知
             let res = state.compare_exchange(curr, set_state(curr, NOTIFIED), SeqCst, SeqCst);
-
+            // 不返回waker
             match res {
                 Ok(_) => None,
                 Err(actual) => {
@@ -770,7 +806,9 @@ fn notify_locked(
             // transition **out** of `WAITING`.
             //
             // Get a pending waiter using one of the available dequeue strategies.
+            // 等待状态时
             let waiter = match strategy {
+                // 根据strategy获取waker
                 NotifyOneStrategy::Fifo => waiters.pop_back().unwrap(),
                 NotifyOneStrategy::Lifo => waiters.pop_front().unwrap(),
             };
@@ -782,10 +820,12 @@ fn notify_locked(
             let waker = unsafe { waiter.waker.with_mut(|waker| (*waker).take()) };
 
             // This waiter is unlinked and will not be shared ever again, release it.
+            // 设置waiter通知类型
             waiter
                 .notification
                 .store_release(Notification::One(strategy));
 
+            // 如果没有等待任务时, 状态设置为空闲
             if waiters.is_empty() {
                 // As this the **final** waiter in the list, the state
                 // must be transitioned to `EMPTY`. As transitioning
@@ -936,9 +976,11 @@ impl Notified<'_> {
         'outer_loop: loop {
             match *state {
                 State::Init => {
+                    // 初始化状态
                     let curr = notify.state.load(SeqCst);
 
                     // Optimistically try acquiring a pending notification
+                    // 如果当前收到通知
                     let res = notify.state.compare_exchange(
                         set_state(curr, NOTIFIED),
                         set_state(curr, EMPTY),
@@ -948,6 +990,7 @@ impl Notified<'_> {
 
                     if res.is_ok() {
                         // Acquired the notification
+                        // 继续下一次循环
                         *state = State::Done;
                         continue 'outer_loop;
                     }
@@ -965,16 +1008,19 @@ impl Notified<'_> {
 
                     // if notify_waiters has been called after the future
                     // was created, then we are done
+                    // notify_waiters调用次数有变化,已经接收到通知
                     if get_num_notify_waiters_calls(curr) != *notify_waiters_calls {
                         *state = State::Done;
                         continue 'outer_loop;
                     }
 
                     // Transition the state to WAITING.
+                    // 状态转换成WAITING
                     loop {
                         match get_state(curr) {
                             EMPTY => {
                                 // Transition to WAITING
+                                // 状态转换成WAITING
                                 let res = notify.state.compare_exchange(
                                     set_state(curr, EMPTY),
                                     set_state(curr, WAITING),
@@ -984,7 +1030,7 @@ impl Notified<'_> {
 
                                 if let Err(actual) = res {
                                     assert_eq!(get_state(actual), NOTIFIED);
-                                    curr = actual;
+                                    curr = actual; // 状态已经变化
                                 } else {
                                     break;
                                 }
@@ -992,6 +1038,7 @@ impl Notified<'_> {
                             WAITING => break,
                             NOTIFIED => {
                                 // Try consuming the notification
+                                // 尝试消费通知状态
                                 let res = notify.state.compare_exchange(
                                     set_state(curr, NOTIFIED),
                                     set_state(curr, EMPTY),
@@ -1002,10 +1049,12 @@ impl Notified<'_> {
                                 match res {
                                     Ok(_) => {
                                         // Acquired the notification
+                                        // 当前状态已消费
                                         *state = State::Done;
                                         continue 'outer_loop;
                                     }
                                     Err(actual) => {
+                                        // 通知被其他线程获取
                                         assert_eq!(get_state(actual), EMPTY);
                                         curr = actual;
                                     }
@@ -1021,6 +1070,7 @@ impl Notified<'_> {
                         //
                         // The use of `old_waiter` here is not necessary, as the field is always
                         // None when we reach this line.
+                        // 替换waker
                         unsafe {
                             old_waker =
                                 waiter.waker.with_mut(|v| std::mem::replace(&mut *v, waker));
@@ -1028,8 +1078,10 @@ impl Notified<'_> {
                     }
 
                     // Insert the waiter into the linked list
+                    // 将waiter插入链表
                     waiters.push_front(NonNull::from(waiter));
 
+                    // 状态更新为等待
                     *state = State::Waiting;
 
                     drop(waiters);
@@ -1044,12 +1096,16 @@ impl Notified<'_> {
                         std::task::ready!(crate::trace::trace_leaf(&mut ctx));
                     }
 
+                    // notification已经设置, 已经接收到通知
                     if waiter.notification.load(Acquire).is_some() {
                         // Safety: waiter is already unlinked and will not be shared again,
                         // so we have an exclusive access to `waker`.
+                        // drop掉waker
                         drop(unsafe { waiter.waker.with_mut(|waker| (*waker).take()) });
 
+                        // 清除通知
                         waiter.notification.clear();
+                        // 设置完成状态
                         *state = State::Done;
                         return Poll::Ready(());
                     }
@@ -1064,6 +1120,7 @@ impl Notified<'_> {
                     // We hold the lock and notifications are set only with the lock held,
                     // so this can be relaxed, because the happens-before relationship is
                     // established through the mutex.
+                    // 再次检查notification
                     if waiter.notification.load(Relaxed).is_some() {
                         // Safety: waiter is already unlinked and will not be shared again,
                         // so we have an exclusive access to `waker`.
@@ -1082,6 +1139,7 @@ impl Notified<'_> {
                     // Load the state with the lock held.
                     let curr = notify.state.load(SeqCst);
 
+                    // 已经接收到全部通知
                     if get_num_notify_waiters_calls(curr) != *notify_waiters_calls {
                         // Before we add a waiter to the list we check if these numbers are
                         // different while holding the lock. If these numbers are different now,
@@ -1095,6 +1153,7 @@ impl Notified<'_> {
 
                         // Safety: we hold the lock, so we have an exclusive access to the list.
                         // The list is used in `notify_waiters`, so it must be guarded.
+                        // 移除waiter
                         unsafe { waiters.remove(NonNull::from(waiter)) };
 
                         *state = State::Done;
@@ -1108,6 +1167,7 @@ impl Notified<'_> {
                                         None => true,
                                     };
                                     if should_update {
+                                        // 更新waker
                                         old_waker = std::mem::replace(&mut *v, Some(waker.clone()));
                                     }
                                 }
@@ -1137,6 +1197,7 @@ impl Notified<'_> {
                         let mut ctx = Context::from_waker(waker);
                         std::task::ready!(crate::trace::trace_leaf(&mut ctx));
                     }
+                    // 返回轮询结束
                     return Poll::Ready(());
                 }
             }
@@ -1161,6 +1222,7 @@ impl Drop for Notified<'_> {
         // dropped, which means we must ensure that the waiter entry is no
         // longer stored in the linked list.
         if matches!(*state, State::Waiting) {
+            // 如果时Waiting状态
             let mut waiters = notify.waiters.lock();
             let mut notify_state = notify.state.load(SeqCst);
 
@@ -1173,9 +1235,11 @@ impl Drop for Notified<'_> {
             // Safety: we hold the lock, so we have an exclusive access to every list the
             // waiter may be contained in. If the node is not contained in the `waiters`
             // list, then it is contained by a guarded list used by `notify_waiters`.
+            // 移除waiter
             unsafe { waiters.remove(NonNull::from(waiter)) };
 
             if waiters.is_empty() && get_state(notify_state) == WAITING {
+                // 如果waiter时空的, 更新状态
                 notify_state = set_state(notify_state, EMPTY);
                 notify.state.store(notify_state, SeqCst);
             }
@@ -1183,6 +1247,7 @@ impl Drop for Notified<'_> {
             // See if the node was notified but not received. In this case, if
             // the notification was triggered via `notify_one`, it must be sent
             // to the next waiter.
+            // 如果drop的waiter收到通知, 唤醒下一个waiter
             if let Some(Notification::One(strategy)) = notification {
                 if let Some(waker) =
                     notify_locked(&mut waiters, &notify.state, notify_state, strategy)

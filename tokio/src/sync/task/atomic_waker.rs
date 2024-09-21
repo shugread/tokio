@@ -24,8 +24,15 @@ use std::task::Waker;
 ///
 /// A single `AtomicWaker` may be reused for any number of calls to `register` or
 /// `wake`.
+/// 在一个线程中注册一个任务的 Waker,并在另一个线程中唤醒这个任务
+///
+/// 用于异步任务之间的唤醒协调.
+/// 每次调用 register 时,注册当前的任务以便稍后通过 wake 唤醒它.
+/// 如果在调用 register 前调用 wake，则 wake 将不起作用.
 pub(crate) struct AtomicWaker {
+    // 状态
     state: AtomicUsize,
+    // 保存的状态
     waker: UnsafeCell<Option<Waker>>,
 }
 
@@ -129,12 +136,15 @@ impl UnwindSafe for AtomicWaker {}
 //    in the task waking itself and get scheduled again.
 
 /// Idle state.
+/// 空闲状态,没有任何任务被注册
 const WAITING: usize = 0;
 
 /// A new waker value is being registered with the `AtomicWaker` cell.
+/// 当前线程正在注册一个新的 Waker,也就是准备将新的任务注册为将来被唤醒的任务.
 const REGISTERING: usize = 0b01;
 
 /// The task currently registered with the `AtomicWaker` cell is being woken.
+/// 当前线程正在唤醒一个已经注册的 Waker
 const WAKING: usize = 0b10;
 
 impl AtomicWaker {
@@ -172,6 +182,9 @@ impl AtomicWaker {
         self.do_register(waker);
     }
 
+    // 尝试将状态从 WAITING 转换为 REGISTERING,并在成功获取锁后将 Waker 存储到 UnsafeCell 中.
+    // 如果在注册期间检测到有其他线程调用了 wake,则会唤醒当前的 Waker.
+    // 一旦 register 完成,状态将返回到 WAITING,表示可以再次注册新的 Waker 或进行唤醒操作.
     fn do_register<W>(&self, waker: W)
     where
         W: WakerRef,
@@ -180,12 +193,14 @@ impl AtomicWaker {
             std::panic::catch_unwind(AssertUnwindSafe(f))
         }
 
+        // 状态转换成注册中
         match self
             .state
             .compare_exchange(WAITING, REGISTERING, Acquire, Acquire)
             .unwrap_or_else(|x| x)
         {
             WAITING => {
+                // 成功转换成REGISTERING
                 unsafe {
                     // If `into_waker` panics (because it's code outside of
                     // AtomicWaker) we need to prime a guard that is called on
@@ -200,6 +215,7 @@ impl AtomicWaker {
                     let mut old_waker = None;
                     match new_waker_or_panic {
                         Ok(new_waker) => {
+                            // 修改waker
                             old_waker = self.waker.with_mut(|t| (*t).take());
                             self.waker.with_mut(|t| *t = Some(new_waker));
                         }
@@ -213,6 +229,7 @@ impl AtomicWaker {
                     //
                     // Start by assuming that the state is `REGISTERING` as this
                     // is what we jut set it to.
+                    // wake修改成功将状态转换成WAITING
                     let res = self
                         .state
                         .compare_exchange(REGISTERING, WAITING, AcqRel, Acquire);
@@ -221,6 +238,7 @@ impl AtomicWaker {
                         Ok(_) => {
                             // We don't want to give the caller the panic if it
                             // was someone else who put in that waker.
+                            // 修改成功将drop掉旧waker
                             let _ = catch_unwind(move || {
                                 drop(old_waker);
                             });
@@ -230,18 +248,22 @@ impl AtomicWaker {
                             // concurrent thread called `wake`. In this
                             // case, `actual` **must** be `REGISTERING |
                             // WAKING`.
+                            // 仅当并发线程调用`wake`时,才能到达此分支。在这种情况下,`actual`必须为`REGISTERING | WAKING`.
                             debug_assert_eq!(actual, REGISTERING | WAKING);
 
                             // Take the waker to wake once the atomic operation has
                             // completed.
+                            // 取出waker
                             let mut waker = self.waker.with_mut(|t| (*t).take());
 
                             // Just swap, because no one could change state
                             // while state == `Registering | `Waking`
+                            // 设置WAITING
                             self.state.swap(WAITING, AcqRel);
 
                             // If `into_waker` panicked, then the waker in the
                             // waker slot is actually the old waker.
+                            // 如果into_waker出错, waker里面是old_waker
                             if maybe_panic.is_some() {
                                 old_waker = waker.take();
                             }
@@ -249,6 +271,7 @@ impl AtomicWaker {
                             // We don't want to give the caller the panic if it
                             // was someone else who put in that waker.
                             if let Some(old_waker) = old_waker {
+                                // 唤醒old_waker
                                 let _ = catch_unwind(move || {
                                     old_waker.wake();
                                 });
@@ -259,6 +282,7 @@ impl AtomicWaker {
                             //
                             // If this panics, we end up in a consumed state and
                             // return the panic to the caller.
+                            // 唤醒waker
                             if let Some(waker) = waker {
                                 debug_assert!(maybe_panic.is_none());
                                 waker.wake();
@@ -279,6 +303,7 @@ impl AtomicWaker {
                 //
                 // If this panics, someone else is responsible for restoring the
                 // state of the waker.
+                // 如果WAKING,直接调用wake
                 waker.wake();
 
                 // This is equivalent to a spin lock, so use a spin hint.
@@ -314,12 +339,15 @@ impl AtomicWaker {
         // AcqRel ordering is used in order to acquire the value of the `waker`
         // cell as well as to establish a `release` ordering with whatever
         // memory the `AtomicWaker` is associated with.
+        // 获取waker
         match self.state.fetch_or(WAKING, AcqRel) {
             WAITING => {
                 // The waking lock has been acquired.
+                // 移出waker
                 let waker = unsafe { self.waker.with_mut(|t| (*t).take()) };
 
                 // Release the lock
+                // 去掉WAKING
                 self.state.fetch_and(!WAKING, Release);
 
                 waker
@@ -332,6 +360,8 @@ impl AtomicWaker {
                 // doesn't matter if there are concurrent registering threads or
                 // not.
                 //
+                // 当前有一个并发线程正在更新关联的唤醒器,
+                // 不用操作, 修改waker的线程会调用wake
                 debug_assert!(
                     state == REGISTERING || state == REGISTERING | WAKING || state == WAKING
                 );

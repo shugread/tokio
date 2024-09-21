@@ -16,6 +16,7 @@ use std::task::Poll::{Pending, Ready};
 use std::task::{ready, Context, Poll};
 
 /// Channel sender.
+/// 发送者
 pub(crate) struct Tx<T, S> {
     inner: Arc<Chan<T, S>>,
 }
@@ -27,6 +28,7 @@ impl<T, S: fmt::Debug> fmt::Debug for Tx<T, S> {
 }
 
 /// Channel receiver.
+/// 接收者
 pub(crate) struct Rx<T, S: Semaphore> {
     inner: Arc<Chan<T, S>>,
 }
@@ -51,23 +53,29 @@ pub(crate) trait Semaphore {
 
 pub(super) struct Chan<T, S> {
     /// Handle to the push half of the lock-free list.
+    /// 处理无锁列表的推送的一半.
     tx: CachePadded<list::Tx<T>>,
 
     /// Receiver waker. Notified when a value is pushed into the channel.
+    /// 接收方唤醒器.当值被推入通道时收到通知.
     rx_waker: CachePadded<AtomicWaker>,
 
     /// Notifies all tasks listening for the receiver being dropped.
+    /// 通知所有监听接收器被丢弃的任务.
     notify_rx_closed: Notify,
 
     /// Coordinates access to channel's capacity.
+    /// 信号量
     semaphore: S,
 
     /// Tracks the number of outstanding sender handles.
     ///
     /// When this drops to zero, the send half of the channel is closed.
+    /// 发送者数量
     tx_count: AtomicUsize,
 
     /// Tracks the number of outstanding weak sender handles.
+    /// 弱引用发送者数量
     tx_weak_count: AtomicUsize,
 
     /// Only accessed by `Rx` handle.
@@ -90,8 +98,10 @@ where
 }
 
 /// Fields only accessed by `Rx` handle.
+/// 仅由`Rx`句柄访问的字段.
 struct RxFields<T> {
     /// Channel receiver. This field is only accessed by the `Receiver` type.
+    /// 处理无锁列表的拉取的一半.
     list: list::Rx<T>,
 
     /// `true` if `Rx::close` is called.
@@ -138,14 +148,17 @@ impl<T, S> Tx<T, S> {
         Tx { inner: chan }
     }
 
+    // 发送者的数量
     pub(super) fn strong_count(&self) -> usize {
         self.inner.tx_count.load(Acquire)
     }
 
+    // 弱引用发送者的数量
     pub(super) fn weak_count(&self) -> usize {
         self.inner.tx_weak_count.load(Relaxed)
     }
 
+    // 降级为弱引用
     pub(super) fn downgrade(&self) -> Arc<Chan<T, S>> {
         self.inner.increment_weak_count();
 
@@ -153,15 +166,18 @@ impl<T, S> Tx<T, S> {
     }
 
     // Returns the upgraded channel or None if the upgrade failed.
+    // 升级成强引用
     pub(super) fn upgrade(chan: Arc<Chan<T, S>>) -> Option<Self> {
         let mut tx_count = chan.tx_count.load(Acquire);
 
         loop {
             if tx_count == 0 {
                 // channel is closed
+                // 通道已经关闭
                 return None;
             }
 
+            // 引用加一
             match chan
                 .tx_count
                 .compare_exchange_weak(tx_count, tx_count + 1, AcqRel, Acquire)
@@ -177,11 +193,13 @@ impl<T, S> Tx<T, S> {
     }
 
     /// Send a message and notify the receiver.
+    /// 发送数据
     pub(crate) fn send(&self, value: T) {
         self.inner.send(value);
     }
 
     /// Wake the receive half
+    /// 通知接收端
     pub(crate) fn wake_rx(&self) {
         self.inner.rx_waker.wake();
     }
@@ -194,9 +212,11 @@ impl<T, S> Tx<T, S> {
 
 impl<T, S: Semaphore> Tx<T, S> {
     pub(crate) fn is_closed(&self) -> bool {
+        // 是否关闭
         self.inner.semaphore.is_closed()
     }
 
+    // 关闭
     pub(crate) async fn closed(&self) {
         // In order to avoid a race condition, we first request a notification,
         // **then** check whether the semaphore is closed. If the semaphore is
@@ -206,6 +226,7 @@ impl<T, S: Semaphore> Tx<T, S> {
         if self.inner.semaphore.is_closed() {
             return;
         }
+        // 等待关闭
         notified.await;
     }
 }
@@ -229,6 +250,7 @@ impl<T, S> Drop for Tx<T, S> {
         }
 
         // Close the list, which sends a `Close` message
+        // 关闭发送端
         self.inner.tx.close();
 
         // Notify the receiver
@@ -244,6 +266,7 @@ impl<T, S: Semaphore> Rx<T, S> {
     }
 
     pub(crate) fn close(&mut self) {
+        // 设置关闭字段
         self.inner.rx_fields.with_mut(|rx_fields_ptr| {
             let rx_fields = unsafe { &mut *rx_fields_ptr };
 
@@ -255,9 +278,11 @@ impl<T, S: Semaphore> Rx<T, S> {
         });
 
         self.inner.semaphore.close();
+        // 通知发送端关闭
         self.inner.notify_rx_closed.notify_waiters();
     }
 
+    // 判断关闭
     pub(crate) fn is_closed(&self) -> bool {
         // There two internal states that can represent a closed channel
         //
@@ -271,6 +296,7 @@ impl<T, S: Semaphore> Rx<T, S> {
         self.inner.semaphore.is_closed() || self.inner.tx_count.load(Acquire) == 0
     }
 
+    // 判断是否有数据
     pub(crate) fn is_empty(&self) -> bool {
         self.inner.rx_fields.with(|rx_fields_ptr| {
             let rx_fields = unsafe { &*rx_fields_ptr };
@@ -278,6 +304,7 @@ impl<T, S: Semaphore> Rx<T, S> {
         })
     }
 
+    // 获取通道中的数据长度
     pub(crate) fn len(&self) -> usize {
         self.inner.rx_fields.with(|rx_fields_ptr| {
             let rx_fields = unsafe { &*rx_fields_ptr };
@@ -286,6 +313,7 @@ impl<T, S: Semaphore> Rx<T, S> {
     }
 
     /// Receive the next value
+    /// 接收数据
     pub(crate) fn recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
         use super::block::Read;
 
@@ -321,15 +349,19 @@ impl<T, S: Semaphore> Rx<T, S> {
                 };
             }
 
+            // 通过pop弹出值
             try_recv!();
 
+            // 设置waker
             self.inner.rx_waker.register_by_ref(cx.waker());
 
             // It is possible that a value was pushed between attempting to read
             // and registering the task, so we have to check the channel a
             // second time here.
+            // 再次尝试获取值
             try_recv!();
 
+            // 如果通道关闭
             if rx_fields.rx_closed && self.inner.semaphore.is_idle() {
                 coop.made_progress();
                 Ready(None)
@@ -356,12 +388,14 @@ impl<T, S: Semaphore> Rx<T, S> {
         // Keep track of task budget
         let coop = ready!(crate::runtime::coop::poll_proceed(cx));
 
+        // 如果获取0个数据
         if limit == 0 {
             coop.made_progress();
             return Ready(0usize);
         }
 
         let mut remaining = limit;
+        // 初始化长度
         let initial_length = buffer.len();
 
         self.inner.rx_fields.with_mut(|rx_fields_ptr| {
@@ -371,13 +405,14 @@ impl<T, S: Semaphore> Rx<T, S> {
                     while remaining > 0 {
                         match rx_fields.list.pop(&self.inner.tx) {
                             Some(Read::Value(value)) => {
-                                remaining -= 1;
+                                remaining -= 1; // 需要的长度减一
                                 buffer.push(value);
                             }
 
                             Some(Read::Closed) => {
-                                let number_added = buffer.len() - initial_length;
+                                let number_added = buffer.len() - initial_length; // 获取的数量
                                 if number_added > 0 {
+                                    // 释放信号量
                                     self.inner.semaphore.add_permits(number_added);
                                 }
                                 // TODO: This check may not be required as it most
@@ -396,8 +431,9 @@ impl<T, S: Semaphore> Rx<T, S> {
                             }
                         }
                     }
-                    let number_added = buffer.len() - initial_length;
+                    let number_added = buffer.len() - initial_length; // 获取的长度
                     if number_added > 0 {
+                        // 释放信号量
                         self.inner.semaphore.add_permits(number_added);
                         coop.made_progress();
                         return Ready(number_added);
@@ -407,6 +443,7 @@ impl<T, S: Semaphore> Rx<T, S> {
 
             try_recv!();
 
+            // 注册waker
             self.inner.rx_waker.register_by_ref(cx.waker());
 
             // It is possible that a value was pushed between attempting to read
@@ -414,6 +451,7 @@ impl<T, S: Semaphore> Rx<T, S> {
             // second time here.
             try_recv!();
 
+            // 判断通道是否关闭
             if rx_fields.rx_closed && self.inner.semaphore.is_idle() {
                 assert!(buffer.is_empty());
                 coop.made_progress();
@@ -425,6 +463,7 @@ impl<T, S: Semaphore> Rx<T, S> {
     }
 
     /// Try to receive the next value.
+    /// 尝试获取数据
     pub(crate) fn try_recv(&mut self) -> Result<T, TryRecvError> {
         use super::list::TryPopResult;
 
@@ -435,7 +474,7 @@ impl<T, S: Semaphore> Rx<T, S> {
                 () => {
                     match rx_fields.list.try_pop(&self.inner.tx) {
                         TryPopResult::Ok(value) => {
-                            self.inner.semaphore.add_permit();
+                            self.inner.semaphore.add_permit(); // 获取信号量
                             return Ok(value);
                         }
                         TryPopResult::Closed => return Err(TryRecvError::Disconnected),
@@ -454,9 +493,11 @@ impl<T, S: Semaphore> Rx<T, S> {
             // This is not a spurious wakeup to `poll_recv` since we just got a
             // Busy from `try_pop`, which only happens if there are messages in
             // the queue.
+            // 唤醒接收者
             self.inner.rx_waker.wake();
 
             // Park the thread until the problematic send has completed.
+            // 挂起线程, 直到获取到数据
             let mut park = CachedParkThread::new();
             let waker = park.waker().unwrap();
             loop {
@@ -491,6 +532,7 @@ impl<T, S: Semaphore> Drop for Rx<T, S> {
         self.inner.rx_fields.with_mut(|rx_fields_ptr| {
             let rx_fields = unsafe { &mut *rx_fields_ptr };
 
+            // 弹出所有数据
             while let Some(Value(_)) = rx_fields.list.pop(&self.inner.tx) {
                 self.inner.semaphore.add_permit();
             }
@@ -503,9 +545,11 @@ impl<T, S: Semaphore> Drop for Rx<T, S> {
 impl<T, S> Chan<T, S> {
     fn send(&self, value: T) {
         // Push the value
+        // 推入数据
         self.tx.push(value);
 
         // Notify the rx task
+        // 通知接收者
         self.rx_waker.wake();
     }
 
@@ -532,6 +576,7 @@ impl<T, S> Drop for Chan<T, S> {
 
         // Safety: the only owner of the rx fields is Chan, and being
         // inside its own Drop means we're the last ones to touch it.
+        // 释放black
         self.rx_fields.with_mut(|rx_fields_ptr| {
             let rx_fields = unsafe { &mut *rx_fields_ptr };
 

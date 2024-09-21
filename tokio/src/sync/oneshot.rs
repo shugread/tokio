@@ -1,5 +1,6 @@
 #![cfg_attr(not(feature = "sync"), allow(dead_code, unreachable_pub))]
 
+//! //! 一次性通道用于在异步任务之间发送单个消息
 //! A one-shot channel is used for sending a single message between
 //! asynchronous tasks. The [`channel`] function is used to create a
 //! [`Sender`] and [`Receiver`] handle pair that form the channel.
@@ -218,6 +219,7 @@ use std::task::{ready, Context, Poll, Waker};
 ///
 /// [`Option`]: std::option::Option
 /// [`Option::take`]: std::option::Option::take
+/// 发送者
 #[derive(Debug)]
 pub struct Sender<T> {
     inner: Option<Arc<Inner<T>>>,
@@ -318,6 +320,7 @@ pub struct Sender<T> {
 ///     # handle.await.unwrap();
 /// }
 /// ```
+/// 接收者
 #[derive(Debug)]
 pub struct Receiver<T> {
     inner: Option<Arc<Inner<T>>>,
@@ -337,16 +340,20 @@ pub mod error {
     /// Error returned by the `Future` implementation for `Receiver`.
     ///
     /// This error is returned by the receiver when the sender is dropped without sending.
+    /// 当`Sender`丢弃而未发送时,`Receicver`将返回此错误
     #[derive(Debug, Eq, PartialEq, Clone)]
     pub struct RecvError(pub(super) ());
 
     /// Error returned by the `try_recv` function on `Receiver`.
+    /// `try_recv`返回的错误
     #[derive(Debug, Eq, PartialEq, Clone)]
     pub enum TryRecvError {
         /// The send half of the channel has not yet sent a value.
+        /// Sender还未发送数据
         Empty,
 
         /// The send half of the channel was dropped without sending a value.
+        /// Sender还没发送数据就丢弃
         Closed,
     }
 
@@ -378,10 +385,12 @@ use self::error::*;
 
 struct Inner<T> {
     /// Manages the state of the inner cell.
+    /// 管理内部单元的状态.
     state: AtomicUsize,
 
     /// The value. This is set by `Sender` and read by `Receiver`. The state of
     /// the cell is tracked by `state`.
+    /// 发送的值
     value: UnsafeCell<Option<T>>,
 
     /// The task to notify when the receiver drops without consuming the value.
@@ -390,6 +399,7 @@ struct Inner<T> {
     ///
     /// The `TX_TASK_SET` bit in the `state` field is set if this field is
     /// initialized. If that bit is unset, this field may be uninitialized.
+    /// 当接收器丢弃而不消耗该值时通知的任务.
     tx_task: Task,
 
     /// The task to notify when the value is sent.
@@ -398,6 +408,7 @@ struct Inner<T> {
     ///
     /// The `RX_TASK_SET` bit in the `state` field is set if this field is
     /// initialized. If that bit is unset, this field may be uninitialized.
+    /// 发送值时通知的任务.
     rx_task: Task,
 }
 
@@ -425,6 +436,7 @@ impl Task {
         });
     }
 
+    // 设置任务的waker
     unsafe fn set_task(&self, cx: &mut Context<'_>) {
         self.0.with_mut(|ptr| {
             let ptr: *mut Waker = (*ptr).as_mut_ptr();
@@ -466,6 +478,7 @@ struct State(usize);
 ///     }
 /// }
 /// ```
+/// 创建一个新的一次性通道,用于在异步任务之间发送单个值.
 #[track_caller]
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     #[cfg(all(tokio_unstable, feature = "tracing"))]
@@ -592,9 +605,11 @@ impl<T> Sender<T> {
     ///     }
     /// }
     /// ```
+    /// 发送一个值
     pub fn send(mut self, t: T) -> Result<(), T> {
         let inner = self.inner.take().unwrap();
 
+        // 写入值
         inner.value.with_mut(|ptr| unsafe {
             // SAFETY: The receiver will not access the `UnsafeCell` unless the
             // channel has been marked as "complete" (the `VALUE_SENT` state bit
@@ -697,6 +712,7 @@ impl<T> Sender<T> {
     ///     let _ = time::timeout(Duration::from_secs(10), rx).await;
     /// }
     /// ```
+    /// 等待关联的 [`Receiver`] 句柄关闭.
     pub async fn closed(&mut self) {
         use crate::future::poll_fn;
 
@@ -743,6 +759,7 @@ impl<T> Sender<T> {
     ///     assert!(tx.send("never received").is_err());
     /// }
     /// ```
+    /// 判断是否已经关闭
     pub fn is_closed(&self) -> bool {
         let inner = self.inner.as_ref().unwrap();
 
@@ -790,6 +807,7 @@ impl<T> Sender<T> {
     ///     println!("the receiver dropped");
     /// }
     /// ```
+    /// 轮询关闭状态
     pub fn poll_closed(&mut self, cx: &mut Context<'_>) -> Poll<()> {
         ready!(crate::trace::trace_leaf(cx));
 
@@ -801,11 +819,13 @@ impl<T> Sender<T> {
         let mut state = State::load(&inner.state, Acquire);
 
         if state.is_closed() {
+            // 已经关闭
             coop.made_progress();
             return Ready(());
         }
 
         if state.is_tx_task_set() {
+            // tx_task已经设置
             let will_notify = unsafe { inner.tx_task.will_wake(cx) };
 
             if !will_notify {
@@ -813,10 +833,12 @@ impl<T> Sender<T> {
 
                 if state.is_closed() {
                     // Set the flag again so that the waker is released in drop
+                    // 再次设置标志，以便waker在drop时被释放
                     State::set_tx_task(&inner.state);
                     coop.made_progress();
                     return Ready(());
                 } else {
+                    // 丢弃旧的waker
                     unsafe { inner.tx_task.drop_task() };
                 }
             }
@@ -824,6 +846,7 @@ impl<T> Sender<T> {
 
         if !state.is_tx_task_set() {
             // Attempt to set the task
+            // 设置tx_task
             unsafe {
                 inner.tx_task.set_task(cx);
             }
@@ -917,6 +940,7 @@ impl<T> Receiver<T> {
     ///     assert_eq!(msg, "will receive");
     /// }
     /// ```
+    /// 关闭
     pub fn close(&mut self) {
         if let Some(inner) = self.inner.as_ref() {
             inner.close();
@@ -998,6 +1022,7 @@ impl<T> Receiver<T> {
     ///     }
     /// }
     /// ```
+    /// 尝试获取值
     pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
         let result = if let Some(inner) = self.inner.as_ref() {
             let state = State::load(&inner.state, Acquire);
@@ -1031,7 +1056,7 @@ impl<T> Receiver<T> {
         } else {
             Err(TryRecvError::Closed)
         };
-
+        // 已经获取到值, 将inner设置为None
         self.inner = None;
         result
     }
@@ -1061,6 +1086,7 @@ impl<T> Receiver<T> {
     ///     sync_code.join().unwrap();
     /// }
     /// ```
+    /// 阻塞获取值
     #[track_caller]
     #[cfg(feature = "sync")]
     #[cfg_attr(docsrs, doc(alias = "recv_blocking"))]
@@ -1132,6 +1158,7 @@ impl<T> Inner<T> {
         if prev.is_rx_task_set() {
             // TODO: Consume waker?
             unsafe {
+                // 通知Receiver
                 self.rx_task.with_task(Waker::wake_by_ref);
             }
         }
@@ -1148,16 +1175,19 @@ impl<T> Inner<T> {
         let mut state = State::load(&self.state, Acquire);
 
         if state.is_complete() {
+            // 已经完成,获取值
             coop.made_progress();
             match unsafe { self.consume_value() } {
                 Some(value) => Ready(Ok(value)),
                 None => Ready(Err(RecvError(()))),
             }
         } else if state.is_closed() {
+            // 通道关闭, 返回错误
             coop.made_progress();
             Ready(Err(RecvError(())))
         } else {
             if state.is_rx_task_set() {
+                // rx_task已经设置
                 let will_notify = unsafe { self.rx_task.will_wake(cx) };
 
                 // Check if the task is still the same
@@ -1179,6 +1209,7 @@ impl<T> Inner<T> {
                             None => Ready(Err(RecvError(()))),
                         };
                     } else {
+                        // 丢弃旧的waker
                         unsafe { self.rx_task.drop_task() };
                     }
                 }
@@ -1186,11 +1217,13 @@ impl<T> Inner<T> {
 
             if !state.is_rx_task_set() {
                 // Attempt to set the task
+                // 设置新的rx_task
                 unsafe {
                     self.rx_task.set_task(cx);
                 }
 
                 // Update the state
+                // 更新状态
                 state = State::set_rx_task(&self.state);
 
                 if state.is_complete() {
@@ -1214,6 +1247,7 @@ impl<T> Inner<T> {
 
         if prev.is_tx_task_set() && !prev.is_complete() {
             unsafe {
+                // 通知Sender
                 self.tx_task.with_task(Waker::wake_by_ref);
             }
         }

@@ -32,9 +32,11 @@ use std::task::{ready, Context, Poll, Waker};
 use std::{cmp, fmt};
 
 /// An asynchronous counting semaphore which permits waiting on multiple permits at once.
+/// 允许同时等待多个许可的异步计数信号量.
 pub(crate) struct Semaphore {
     waiters: Mutex<Waitlist>,
     /// The current number of available permits in the semaphore.
+    /// 信号量中当前可用的许可证数量.
     permits: AtomicUsize,
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     resource_span: tracing::Span,
@@ -81,6 +83,7 @@ struct Waiter {
     ///
     /// This is either the number of remaining permits required by
     /// the waiter, or a flag indicating that the waiter is not yet queued.
+    /// 状态
     state: AtomicUsize,
 
     /// The waker to notify the task awaiting permits.
@@ -88,6 +91,7 @@ struct Waiter {
     /// # Safety
     ///
     /// This may only be accessed while the wait queue is locked.
+    /// 通知的waker
     waker: UnsafeCell<Option<Waker>>,
 
     /// Intrusive linked-list pointers.
@@ -127,6 +131,7 @@ impl Semaphore {
     /// implementation used three bits, so we will continue to reserve them to
     /// avoid a breaking change if additional flags need to be added in the
     /// future.
+    /// 信号量可以容纳的最大许可证数量.
     pub(crate) const MAX_PERMITS: usize = usize::MAX >> 3;
     const CLOSED: usize = 1;
     // The least-significant bit in the number of permits is reserved to use
@@ -221,6 +226,7 @@ impl Semaphore {
     }
 
     /// Returns the current number of available permits.
+    /// 可用的许可数量
     pub(crate) fn available_permits(&self) -> usize {
         self.permits.load(Acquire) >> Self::PERMIT_SHIFT
     }
@@ -228,6 +234,7 @@ impl Semaphore {
     /// Adds `added` new permits to the semaphore.
     ///
     /// The maximum number of permits is `usize::MAX >> 3`, and this function will panic if the limit is exceeded.
+    /// 添加许可
     pub(crate) fn release(&self, added: usize) {
         if added == 0 {
             return;
@@ -239,6 +246,7 @@ impl Semaphore {
 
     /// Closes the semaphore. This prevents the semaphore from issuing new
     /// permits and notifies all pending waiters.
+    /// 关闭
     pub(crate) fn close(&self) {
         let mut waiters = self.waiters.lock();
         // If the semaphore's permits counter has enough permits for an
@@ -250,6 +258,7 @@ impl Semaphore {
         // permit counter is closed, but the wait list is not.
         self.permits.fetch_or(Self::CLOSED, Release);
         waiters.closed = true;
+        // 唤醒所有waiter
         while let Some(mut waiter) = waiters.queue.pop_back() {
             let waker = unsafe { waiter.as_mut().waker.with_mut(|waker| (*waker).take()) };
             if let Some(waker) = waker {
@@ -263,6 +272,7 @@ impl Semaphore {
         self.permits.load(Acquire) & Self::CLOSED == Self::CLOSED
     }
 
+    // 尝试获取许可
     pub(crate) fn try_acquire(&self, num_permits: usize) -> Result<(), TryAcquireError> {
         assert!(
             num_permits <= Self::MAX_PERMITS,
@@ -273,15 +283,18 @@ impl Semaphore {
         let mut curr = self.permits.load(Acquire);
         loop {
             // Has the semaphore closed?
+            // 信号量关闭
             if curr & Self::CLOSED == Self::CLOSED {
                 return Err(TryAcquireError::Closed);
             }
 
             // Are there enough permits remaining?
+            // 许可不足
             if curr < num_permits {
                 return Err(TryAcquireError::NoPermits);
             }
 
+            // 新的许可数量
             let next = curr - num_permits;
 
             match self.permits.compare_exchange(curr, next, AcqRel, Acquire) {
@@ -303,6 +316,7 @@ impl Semaphore {
     ///
     /// If `rem` exceeds the number of permits needed by the wait list, the
     /// remainder are assigned back to the semaphore.
+    /// 从队列末尾开始,将`rem`许可证释放到信号量等待列表中.
     fn add_permits_locked(&self, mut rem: usize, waiters: MutexGuard<'_, Waitlist>) {
         let mut wakers = WakeList::new();
         let mut lock = Some(waiters);
@@ -313,18 +327,21 @@ impl Semaphore {
                 // Was the waiter assigned enough permits to wake it?
                 match waiters.queue.last() {
                     Some(waiter) => {
+                        // 判断许可是否够
                         if !waiter.assign_permits(&mut rem) {
+                            // 许可不够, 跳出
                             break 'inner;
                         }
                     }
                     None => {
-                        is_empty = true;
-                        // If we assigned permits to all the waiters in the queue, and there are
-                        // still permits left over, assign them back to the semaphore.
+                        is_empty = true; // waiters已经空了
+                                         // If we assigned permits to all the waiters in the queue, and there are
+                                         // still permits left over, assign them back to the semaphore.
                         break 'inner;
                     }
                 };
                 let mut waiter = waiters.queue.pop_back().unwrap();
+                // 将waiter的waker移动到wakers
                 if let Some(waker) =
                     unsafe { waiter.as_mut().waker.with_mut(|waker| (*waker).take()) }
                 {
@@ -333,6 +350,7 @@ impl Semaphore {
             }
 
             if rem > 0 && is_empty {
+                // 添加剩下的rem
                 let permits = rem;
                 assert!(
                     permits <= Self::MAX_PERMITS,
@@ -373,6 +391,7 @@ impl Semaphore {
     ///
     /// If there are insufficient permits and it's not possible to reduce by `n`,
     /// return the number of permits that were actually reduced.
+    /// 将信号量的许可证数量最多减少`n`.
     pub(crate) fn forget_permits(&self, n: usize) -> usize {
         if n == 0 {
             return 0;
@@ -394,6 +413,11 @@ impl Semaphore {
         }
     }
 
+    // 轮询
+    // cx: 唤醒等待任务
+    // num_permits: 获取的许可数量
+    // node: 等待获取许可的任务
+    // queue: 是否已经在等待队列中排队
     fn poll_acquire(
         &self,
         cx: &mut Context<'_>,
@@ -401,8 +425,10 @@ impl Semaphore {
         node: Pin<&mut Waiter>,
         queued: bool,
     ) -> Poll<Result<(), AcquireError>> {
+        // 已经获得的权限数量
         let mut acquired = 0;
 
+        // 需要获取的总许可数
         let needed = if queued {
             node.state.load(Acquire) << Self::PERMIT_SHIFT
         } else {
@@ -415,22 +441,25 @@ impl Semaphore {
         let mut curr = self.permits.load(Acquire);
         let mut waiters = loop {
             // Has the semaphore closed?
+            // 判断关闭
             if curr & Self::CLOSED > 0 {
                 return Poll::Ready(Err(AcquireError::closed()));
             }
 
             let mut remaining = 0;
+            // 总共的权限
             let total = curr
                 .checked_add(acquired)
                 .expect("number of permits must not overflow");
             let (next, acq) = if total >= needed {
                 let next = curr - (needed - acquired);
-                (next, needed >> Self::PERMIT_SHIFT)
+                (next, needed >> Self::PERMIT_SHIFT) // (带关闭位的下一个状态, 需要的权限数量)
             } else {
-                remaining = (needed - acquired) - curr;
+                remaining = (needed - acquired) - curr; // 还需要的权限(带关闭位)
                 (0, curr >> Self::PERMIT_SHIFT)
             };
 
+            // 是否有足够的权限
             if remaining > 0 && lock.is_none() {
                 // No permits were immediately available, so this permit will
                 // (probably) need to wait. We'll need to acquire a lock on the
@@ -439,14 +468,17 @@ impl Semaphore {
                 // counter. Otherwise, if we subtract the permits and then
                 // acquire the lock, we might miss additional permits being
                 // added while waiting for the lock.
-                lock = Some(self.waiters.lock());
+                lock = Some(self.waiters.lock()); // 拿到锁
             }
 
+            // 修改状态
             match self.permits.compare_exchange(curr, next, AcqRel, Acquire) {
                 Ok(_) => {
                     acquired += acq;
                     if remaining == 0 {
+                        // 获取到所需要的权限
                         if !queued {
+                            // 不在队列中, 直接返回
                             #[cfg(all(tokio_unstable, feature = "tracing"))]
                             self.resource_span.in_scope(|| {
                                 tracing::trace!(
@@ -463,6 +495,7 @@ impl Semaphore {
 
                             return Poll::Ready(Ok(()));
                         } else if lock.is_none() {
+                            // 在队列中
                             break self.waiters.lock();
                         }
                     }
@@ -485,7 +518,9 @@ impl Semaphore {
             )
         });
 
+        // 是否有足够的权限
         if node.assign_permits(&mut acquired) {
+            // 从队列中移除waiter
             self.add_permits_locked(acquired, waiters);
             return Poll::Ready(Ok(()));
         }
@@ -493,7 +528,9 @@ impl Semaphore {
         assert_eq!(acquired, 0);
         let mut old_waker = None;
 
+        // 许可不够, 需要等待
         // Otherwise, register the waker & enqueue the node.
+        // 替换waker
         node.waker.with_mut(|waker| {
             // Safety: the wait list is locked, so we may modify the waker.
             let waker = unsafe { &mut *waker };
@@ -507,6 +544,7 @@ impl Semaphore {
         });
 
         // If the waiter is not already in the wait queue, enqueue it.
+        // 如果等待者尚未在等待队列中,则将其入队.
         if !queued {
             let node = unsafe {
                 let node = Pin::into_inner_unchecked(node) as *mut _;
@@ -548,6 +586,8 @@ impl Waiter {
     /// Assign permits to the waiter.
     ///
     /// Returns `true` if the waiter should be removed from the queue
+    /// 将权限分配给waiter
+    /// 如果应该将waiter从队列中移除,则返回`true`
     fn assign_permits(&self, n: &mut usize) -> bool {
         let mut curr = self.state.load(Acquire);
         loop {
@@ -699,6 +739,7 @@ impl Drop for Acquire<'_> {
         // remove the entry from the list
         let node = NonNull::from(&mut self.node);
         // Safety: we have locked the wait list.
+        // 移除waiter
         unsafe { waiters.queue.remove(node) };
 
         let acquired_permits = self.num_permits - self.node.state.load(Acquire);

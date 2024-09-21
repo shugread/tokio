@@ -38,10 +38,14 @@ use crate::util::trace;
 /// assert_eq!(num_leaders, 1);
 /// # }
 /// ```
+/// 屏障使得多个任务能够同步某些计算的开始.
 #[derive(Debug)]
 pub struct Barrier {
+    // 屏障状态
     state: Mutex<BarrierState>,
+    // 监听屏障状态改变
     wait: watch::Receiver<usize>,
+    // 屏障允许同步的任务数量
     n: usize,
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     resource_span: tracing::Span,
@@ -49,8 +53,11 @@ pub struct Barrier {
 
 #[derive(Debug)]
 struct BarrierState {
+    // 负责通知屏障状态改变的 watch 通道的发送端
     waker: watch::Sender<usize>,
+    // 当前到达屏障的任务数量
     arrived: usize,
+    // 屏障的代数,每一轮屏障同步都会增加代数.
     generation: usize,
 }
 
@@ -59,6 +66,7 @@ impl Barrier {
     ///
     /// A barrier will block `n`-1 tasks which call [`Barrier::wait`] and then wake up all
     /// tasks at once when the `n`th task calls `wait`.
+    /// 创建屏障
     #[track_caller]
     pub fn new(mut n: usize) -> Barrier {
         let (waker, wait) = crate::sync::watch::channel(0);
@@ -149,7 +157,7 @@ impl Barrier {
         let generation = {
             let mut state = self.state.lock();
             let generation = state.generation;
-            state.arrived += 1;
+            state.arrived += 1; // 增加到达屏障的数量
             #[cfg(all(tokio_unstable, feature = "tracing"))]
             tracing::trace!(
                 target: "runtime::resource::state_update",
@@ -161,6 +169,7 @@ impl Barrier {
                 target: "runtime::resource::async_op::state_update",
                 arrived = true,
             );
+            // 到达屏障设置的数量
             if state.arrived == self.n {
                 #[cfg(all(tokio_unstable, feature = "tracing"))]
                 tracing::trace!(
@@ -169,12 +178,13 @@ impl Barrier {
                 );
                 // we are the leader for this generation
                 // wake everyone, increment the generation, and return
+                // 唤醒
                 state
                     .waker
                     .send(state.generation)
                     .expect("there is at least one receiver");
-                state.arrived = 0;
-                state.generation += 1;
+                state.arrived = 0; // 重置数量
+                state.generation += 1; // 增加代数
                 return BarrierWaitResult(true);
             }
 
@@ -185,11 +195,13 @@ impl Barrier {
         let mut wait = self.wait.clone();
 
         loop {
+            // 等待通知
             let _ = wait.changed().await;
 
             // note that the first time through the loop, this _will_ yield a generation
             // immediately, since we cloned a receiver that has never seen any values.
             if *wait.borrow() >= generation {
+                // 验证代数, 退出循环
                 break;
             }
         }

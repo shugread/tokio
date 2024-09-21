@@ -1,3 +1,4 @@
+//! 多生产者,多消费者广播队列.每个发送的值都会被所有消费者看到.
 //! A multi-producer, multi-consumer broadcast queue. Each sent value is seen by
 //! all consumers.
 //!
@@ -206,6 +207,7 @@ pub struct Receiver<T> {
     shared: Arc<Shared<T>>,
 
     /// Next position to read from
+    /// 下一个要读取的位置
     next: u64,
 }
 
@@ -222,6 +224,7 @@ pub mod error {
     ///
     /// [`send`]: crate::sync::broadcast::Sender::send
     /// [`Sender`]: crate::sync::broadcast::Sender
+    /// 没有接收者将会报错
     #[derive(Debug)]
     pub struct SendError<T>(pub T);
 
@@ -241,12 +244,17 @@ pub mod error {
     pub enum RecvError {
         /// There are no more active senders implying no further messages will ever
         /// be sent.
+        /// 接收者已关闭
         Closed,
 
         /// The receiver lagged too far behind. Attempting to receive again will
         /// return the oldest message still retained by the channel.
         ///
         /// Includes the number of skipped messages.
+        /// 接收方落后太多.
+        /// 尝试再次接收将返回通道仍保留的最旧消息.
+        ///
+        /// 包括跳过的消息数.
         Lagged(u64),
     }
 
@@ -271,10 +279,12 @@ pub mod error {
         /// [`Sender`] handles, so data may yet become available.
         ///
         /// [`Sender`]: crate::sync::broadcast::Sender
+        /// 消息队列时空的
         Empty,
 
         /// There are no more active senders implying no further messages will ever
         /// be sent.
+        /// 发送者已经关闭
         Closed,
 
         /// The receiver lagged too far behind and has been forcibly disconnected.
@@ -282,6 +292,7 @@ pub mod error {
         /// retained by the channel.
         ///
         /// Includes the number of skipped messages.
+        /// 接收者落后太多消息
         Lagged(u64),
     }
 
@@ -303,34 +314,44 @@ use self::error::{RecvError, SendError, TryRecvError};
 /// Data shared between senders and receivers.
 struct Shared<T> {
     /// slots in the channel.
+    /// 消息槽
     buffer: Box<[RwLock<Slot<T>>]>,
 
     /// Mask a position -> index.
+    /// 掩码
     mask: usize,
 
     /// Tail of the queue. Includes the rx wait list.
+    /// 队列尾部.包括 rx 等待列表.
     tail: Mutex<Tail>,
 
     /// Number of outstanding Sender handles.
+    /// 未完成的发送方句柄的数量.
     num_tx: AtomicUsize,
 }
 
 /// Next position to write a value.
+/// 下一个写入值的位置.
 struct Tail {
     /// Next position to write to.
+    /// 下一个写入值的位置.
     pos: u64,
 
     /// Number of active receivers.
+    /// 接收者数量
     rx_cnt: usize,
 
     /// True if the channel is closed.
+    /// 关闭标识
     closed: bool,
 
     /// Receivers waiting for a value.
+    /// 等待者链表
     waiters: LinkedList<Waiter, <Waiter as linked_list::Link>::Target>,
 }
 
 /// Slot in the buffer.
+/// 槽
 struct Slot<T> {
     /// Remaining number of receivers that are expected to see this value.
     ///
@@ -338,27 +359,34 @@ struct Slot<T> {
     ///
     /// An atomic is used as it is mutated concurrently with the slot read lock
     /// acquired.
+    /// 剩余接收器数量.
+    /// 当此值变为零时,将释放该值.
     rem: AtomicUsize,
 
     /// Uniquely identifies the `send` stored in the slot.
+    /// 唯一地标识存储在槽中的`send`.
     pos: u64,
 
     /// The value being broadcast.
     ///
     /// The value is set by `send` when the write lock is held. When a reader
     /// drops, `rem` is decremented. When it hits zero, the value is dropped.
+    /// 正在广播的值.
     val: UnsafeCell<Option<T>>,
 }
 
 /// An entry in the wait queue.
+/// 等待队列
 struct Waiter {
     /// True if queued.
     queued: AtomicBool,
 
     /// Task waiting on the broadcast channel.
+    /// waker
     waker: Option<Waker>,
 
     /// Intrusive linked-list pointers.
+    /// 链表
     pointers: linked_list::Pointers<Waiter>,
 
     /// Should not be `Unpin`.
@@ -389,6 +417,7 @@ struct RecvGuard<'a, T> {
 }
 
 /// Receive a value future.
+/// 接收值的Future
 struct Recv<'a, T> {
     /// Receiver being waited on.
     receiver: &'a mut Receiver<T>,
@@ -401,6 +430,7 @@ unsafe impl<'a, T: Send> Send for Recv<'a, T> {}
 unsafe impl<'a, T: Send> Sync for Recv<'a, T> {}
 
 /// Max number of receivers. Reserve space to lock.
+/// 接收器的最大数量,保留空间以进行锁定.
 const MAX_RECEIVERS: usize = usize::MAX >> 2;
 
 /// Create a bounded, multi-producer, multi-consumer channel where each sent
@@ -455,6 +485,7 @@ const MAX_RECEIVERS: usize = usize::MAX >> 2;
 ///
 /// This will panic if `capacity` is equal to `0` or larger
 /// than `usize::MAX / 2`.
+/// 创建通道
 #[track_caller]
 pub fn channel<T: Clone>(capacity: usize) -> (Sender<T>, Receiver<T>) {
     // SAFETY: In the line below we are creating one extra receiver, so there will be 1 in total.
@@ -479,6 +510,7 @@ impl<T> Sender<T> {
     ///
     /// [`broadcast`]: crate::sync::broadcast
     /// [`broadcast::channel`]: crate::sync::broadcast::channel
+    /// 创建发送者
     #[track_caller]
     pub fn new(capacity: usize) -> Self {
         // SAFETY: We don't create extra receivers, so there are 0.
@@ -505,10 +537,12 @@ impl<T> Sender<T> {
         );
 
         // Round to a power of two
+        // 容量设置为2的幂次
         capacity = capacity.next_power_of_two();
 
         let mut buffer = Vec::with_capacity(capacity);
 
+        // 添加槽
         for i in 0..capacity {
             buffer.push(RwLock::new(Slot {
                 rem: AtomicUsize::new(0),
@@ -583,31 +617,39 @@ impl<T> Sender<T> {
     ///     tx.send(20).unwrap();
     /// }
     /// ```
+    /// 发送数据
     pub fn send(&self, value: T) -> Result<usize, SendError<T>> {
         let mut tail = self.shared.tail.lock();
 
         if tail.rx_cnt == 0 {
+            // 没有接收者
             return Err(SendError(value));
         }
 
         // Position to write into
         let pos = tail.pos;
         let rem = tail.rx_cnt;
+        // 获取槽的下标
         let idx = (pos & self.shared.mask as u64) as usize;
 
         // Update the tail position
+        // 下标加1
         tail.pos = tail.pos.wrapping_add(1);
 
         // Get the slot
+        // 获取槽
         let mut slot = self.shared.buffer[idx].write().unwrap();
 
         // Track the position
+        // 跟踪位置
         slot.pos = pos;
 
         // Set remaining receivers
+        // 设置接收者的数量
         slot.rem.with_mut(|v| *v = rem);
 
         // Write the value
+        // 写入值
         slot.val = UnsafeCell::new(Some(value));
 
         // Release the slot lock before notifying the receivers.
@@ -616,6 +658,7 @@ impl<T> Sender<T> {
         // Notify and release the mutex. This must happen after the slot lock is
         // released, otherwise the writer lock bit could be cleared while another
         // thread is in the critical section.
+        // 通知接收者
         self.shared.notify_rx(tail);
 
         Ok(rem)
@@ -644,6 +687,7 @@ impl<T> Sender<T> {
     ///     assert_eq!(20, value);
     /// }
     /// ```
+    /// 增加接收者
     pub fn subscribe(&self) -> Receiver<T> {
         let shared = self.shared.clone();
         new_receiver(shared)
@@ -686,14 +730,15 @@ impl<T> Sender<T> {
     ///     assert_eq!(tx.len(), 2);
     /// }
     /// ```
+    /// 获取队列长度
     pub fn len(&self) -> usize {
         let tail = self.shared.tail.lock();
 
-        let base_idx = (tail.pos & self.shared.mask as u64) as usize;
+        let base_idx = (tail.pos & self.shared.mask as u64) as usize; // 下标
         let mut low = 0;
-        let mut high = self.shared.buffer.len();
+        let mut high = self.shared.buffer.len(); // 总长度
         while low < high {
-            let mid = low + (high - low) / 2;
+            let mid = low + (high - low) / 2; // 一半的下标
             let idx = base_idx.wrapping_add(mid) & self.shared.mask;
             if self.shared.buffer[idx].read().unwrap().rem.load(SeqCst) == 0 {
                 low = mid + 1;
@@ -776,6 +821,7 @@ impl<T> Sender<T> {
     ///     tx.send(10).unwrap();
     /// }
     /// ```
+    /// 接收者数量
     pub fn receiver_count(&self) -> usize {
         let tail = self.shared.tail.lock();
         tail.rx_cnt
@@ -804,6 +850,7 @@ impl<T> Sender<T> {
         Arc::ptr_eq(&self.shared, &other.shared)
     }
 
+    // 关闭通道
     fn close_channel(&self) {
         let mut tail = self.shared.tail.lock();
         tail.closed = true;
@@ -813,6 +860,7 @@ impl<T> Sender<T> {
 }
 
 /// Create a new `Receiver` which reads starting from the tail.
+/// 创建接收者
 fn new_receiver<T>(shared: Arc<Shared<T>>) -> Receiver<T> {
     let mut tail = shared.tail.lock();
 
@@ -892,6 +940,7 @@ impl<T> Shared<T> {
         //   guard node after this function returns / panics.
         let mut list = WaitersList::new(std::mem::take(&mut tail.waiters), guard.as_ref(), self);
 
+        // 通知所有waker
         let mut wakers = WakeList::new();
         'outer: loop {
             while wakers.can_push() {
@@ -1059,6 +1108,7 @@ impl<T> Receiver<T> {
         // The slot holding the next value to read
         let mut slot = self.shared.buffer[idx].read().unwrap();
 
+        // 如果slot的pos和next不等
         if slot.pos != self.next {
             // Release the `slot` lock before attempting to acquire the `tail`
             // lock. This is required because `send2` acquires the tail lock
@@ -1086,6 +1136,7 @@ impl<T> Receiver<T> {
                     // At this point the channel is empty for *this* receiver. If
                     // it's been closed, then that's what we return, otherwise we
                     // set a waker and return empty.
+                    // 接收者已经获取了值
                     if tail.closed {
                         return Err(TryRecvError::Closed);
                     }
@@ -1095,6 +1146,7 @@ impl<T> Receiver<T> {
                         // Safety: called while locked.
                         unsafe {
                             // Only queue if not already queued
+                            // 保存waker
                             waiter.with_mut(|ptr| {
                                 // If there is no waker **or** if the currently
                                 // stored waker references a **different** task,
@@ -1113,6 +1165,7 @@ impl<T> Receiver<T> {
                                 // If the waiter is not already queued, enqueue it.
                                 // `Relaxed` order suffices: we have synchronized with
                                 // all writers through the tail lock that we hold.
+                                // 设置queue
                                 if !(*ptr).queued.load(Relaxed) {
                                     // `Relaxed` order suffices: all the readers will
                                     // synchronize with this write through the tail lock.
@@ -1136,6 +1189,7 @@ impl<T> Receiver<T> {
                 // catch up by skipping dropped messages and setting the
                 // internal cursor to the **oldest** message stored by the
                 // channel.
+                // 接收方落后于发送方,落后幅度超过通道容量
                 let next = tail.pos.wrapping_sub(self.shared.buffer.len() as u64);
 
                 let missed = next.wrapping_sub(self.next);
@@ -1155,6 +1209,7 @@ impl<T> Receiver<T> {
             }
         }
 
+        // self.next与slot的pos一样,表示就是下一个值
         self.next = self.next.wrapping_add(1);
 
         Ok(RecvGuard { slot })
@@ -1185,6 +1240,7 @@ impl<T: Clone> Receiver<T> {
     ///   assert_eq!(rx.recv().await.unwrap(), 1);
     /// }
     /// ```
+    /// 创建接收者
     pub fn resubscribe(&self) -> Self {
         let shared = self.shared.clone();
         new_receiver(shared)
@@ -1261,6 +1317,7 @@ impl<T: Clone> Receiver<T> {
     ///     assert_eq!(30, rx.recv().await.unwrap());
     /// }
     /// ```
+    /// 接收一个值
     pub async fn recv(&mut self) -> Result<T, RecvError> {
         let fut = Recv::new(self);
         fut.await
@@ -1306,6 +1363,7 @@ impl<T: Clone> Receiver<T> {
     ///     assert_eq!(10, value);
     /// }
     /// ```
+    /// 尝试接收值
     pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
         let guard = self.recv_ref(None)?;
         guard.clone_value().ok_or(TryRecvError::Closed)
@@ -1344,6 +1402,7 @@ impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
         let mut tail = self.shared.tail.lock();
 
+        // 接收者减1
         tail.rx_cnt -= 1;
         let until = tail.pos;
 
@@ -1400,6 +1459,7 @@ where
 
         let (receiver, waiter) = self.project();
 
+        // 获取值
         let guard = match receiver.recv_ref(Some((waiter, cx.waker()))) {
             Ok(value) => value,
             Err(TryRecvError::Empty) => return Poll::Pending,
@@ -1439,6 +1499,7 @@ impl<'a, T> Drop for Recv<'a, T> {
                 //
                 // safety: tail lock is held and the wait node is verified to be in
                 // the list.
+                // 移除waiter
                 unsafe {
                     self.waiter.with_mut(|ptr| {
                         tail.waiters.remove((&mut *ptr).into());
@@ -1495,6 +1556,7 @@ impl<'a, T> Drop for RecvGuard<'a, T> {
         // Decrement the remaining counter
         if 1 == self.slot.rem.fetch_sub(1, SeqCst) {
             // Safety: Last receiver, drop the value
+            // 最后一个接收者, 清空值
             self.slot.val.with_mut(|ptr| unsafe { *ptr = None });
         }
     }

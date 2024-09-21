@@ -8,6 +8,7 @@ use std::task::{Context, Poll};
 /// Send values to the associated `UnboundedReceiver`.
 ///
 /// Instances are created by the [`unbounded_channel`] function.
+/// 无限容量通道的发送者
 pub struct UnboundedSender<T> {
     chan: chan::Tx<T, Semaphore>,
 }
@@ -69,6 +70,7 @@ impl<T> fmt::Debug for UnboundedSender<T> {
 /// This receiver can be turned into a `Stream` using [`UnboundedReceiverStream`].
 ///
 /// [`UnboundedReceiverStream`]: https://docs.rs/tokio-stream/0.1/tokio_stream/wrappers/struct.UnboundedReceiverStream.html
+/// 无限容量通道的接收者
 pub struct UnboundedReceiver<T> {
     /// The channel receiver
     chan: chan::Rx<T, Semaphore>,
@@ -92,6 +94,7 @@ impl<T> fmt::Debug for UnboundedReceiver<T> {
 /// **Note** that the amount of available system memory is an implicit bound to
 /// the channel. Using an `unbounded` channel has the ability of causing the
 /// process to run out of memory. In this case, the process will be aborted.
+/// 创建无限容量的通道
 pub fn unbounded_channel<T>() -> (UnboundedSender<T>, UnboundedReceiver<T>) {
     let (tx, rx) = chan::channel(Semaphore(AtomicUsize::new(0)));
 
@@ -164,6 +167,7 @@ impl<T> UnboundedReceiver<T> {
     ///     assert_eq!(Some("world"), rx.recv().await);
     /// }
     /// ```
+    /// 接收数据
     pub async fn recv(&mut self) -> Option<T> {
         use crate::future::poll_fn;
 
@@ -238,6 +242,7 @@ impl<T> UnboundedReceiver<T> {
     ///     assert_eq!(vec!["first", "second", "third", "fourth"], buffer);
     /// }
     /// ```
+    /// 接收多个数据
     pub async fn recv_many(&mut self, buffer: &mut Vec<T>, limit: usize) -> usize {
         use crate::future::poll_fn;
         poll_fn(|cx| self.chan.recv_many(cx, buffer, limit)).await
@@ -283,6 +288,7 @@ impl<T> UnboundedReceiver<T> {
     ///     assert_eq!(Err(TryRecvError::Disconnected), rx.try_recv());
     /// }
     /// ```
+    /// 尝试获取数据
     pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
         self.chan.try_recv()
     }
@@ -312,6 +318,7 @@ impl<T> UnboundedReceiver<T> {
     ///     sync_code.join().unwrap();
     /// }
     /// ```
+    /// 阻塞获取数据
     #[track_caller]
     #[cfg(feature = "sync")]
     #[cfg_attr(docsrs, doc(alias = "recv_blocking"))]
@@ -326,6 +333,7 @@ impl<T> UnboundedReceiver<T> {
     ///
     /// To guarantee that no messages are dropped, after calling `close()`,
     /// `recv()` must be called until `None` is returned.
+    /// 关闭通道
     pub fn close(&mut self) {
         self.chan.close();
     }
@@ -393,6 +401,7 @@ impl<T> UnboundedReceiver<T> {
     ///     assert_eq!(1, rx.len());
     /// }
     /// ```
+    /// 返回通道中的消息数量.
     pub fn len(&self) -> usize {
         self.chan.len()
     }
@@ -418,6 +427,7 @@ impl<T> UnboundedReceiver<T> {
     /// failure has been resolved. Note that receiving such a wakeup does not
     /// guarantee that the next call will succeed — it could fail with another
     /// spurious failure.
+    /// 获取数据
     pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
         self.chan.recv(cx)
     }
@@ -490,6 +500,7 @@ impl<T> UnboundedReceiver<T> {
     ///     assert_eq!(buffer, vec![0,1,2])
     /// }
     /// ```
+    /// 获取多个数据
     pub fn poll_recv_many(
         &mut self,
         cx: &mut Context<'_>,
@@ -500,11 +511,13 @@ impl<T> UnboundedReceiver<T> {
     }
 
     /// Returns the number of [`UnboundedSender`] handles.
+    /// 强引用的发送者
     pub fn sender_strong_count(&self) -> usize {
         self.chan.sender_strong_count()
     }
 
     /// Returns the number of [`WeakUnboundedSender`] handles.
+    /// 弱引用的发送者
     pub fn sender_weak_count(&self) -> usize {
         self.chan.sender_weak_count()
     }
@@ -527,6 +540,7 @@ impl<T> UnboundedSender<T> {
     ///
     /// [`close`]: UnboundedReceiver::close
     /// [`UnboundedReceiver`]: UnboundedReceiver
+    /// 发送数据
     pub fn send(&self, message: T) -> Result<(), SendError<T>> {
         if !self.inc_num_messages() {
             return Err(SendError(message));
@@ -543,16 +557,19 @@ impl<T> UnboundedSender<T> {
         let mut curr = self.chan.semaphore().0.load(Acquire);
 
         loop {
+            // 通道关闭
             if curr & 1 == 1 {
                 return false;
             }
 
             if curr == usize::MAX ^ 1 {
+                // 溢出了引用计数.
                 // Overflowed the ref count. There is no safe way to recover, so
                 // abort the process. In practice, this should never happen.
                 process::abort()
             }
 
+            // 增加信号量
             match self
                 .chan
                 .semaphore()
@@ -603,6 +620,7 @@ impl<T> UnboundedSender<T> {
     ////     println!("Receiver dropped");
     /// }
     /// ```
+    /// 等待通道关闭
     pub async fn closed(&self) {
         self.chan.closed().await;
     }
@@ -625,6 +643,7 @@ impl<T> UnboundedSender<T> {
     /// assert!(tx.is_closed());
     /// assert!(tx2.is_closed());
     /// ```
+    /// 判断通道是否关闭
     pub fn is_closed(&self) -> bool {
         self.chan.is_closed()
     }
@@ -649,6 +668,7 @@ impl<T> UnboundedSender<T> {
     /// towards RAII semantics, i.e. if all `UnboundedSender` instances of the
     /// channel were dropped and only `WeakUnboundedSender` instances remain,
     /// the channel is closed.
+    /// 生成弱引用发送者
     #[must_use = "Downgrade creates a WeakSender without destroying the original non-weak sender."]
     pub fn downgrade(&self) -> WeakUnboundedSender<T> {
         WeakUnboundedSender {

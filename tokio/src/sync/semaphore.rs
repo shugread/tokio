@@ -5,6 +5,7 @@ use crate::util::trace;
 use std::sync::Arc;
 
 /// Counting semaphore performing asynchronous permit acquisition.
+/// 支持异步的信号量
 ///
 /// A semaphore maintains a set of permits. Permits are used to synchronize
 /// access to a shared resource. A semaphore differs from a mutex in that it
@@ -391,12 +392,14 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct Semaphore {
     /// The low level semaphore
+    /// 低级信号量
     ll_sem: ll::Semaphore,
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     resource_span: tracing::Span,
 }
 
 /// A permit from the semaphore.
+/// 来自信号量的许可.
 ///
 /// This type is created by the [`acquire`] method.
 ///
@@ -410,6 +413,7 @@ pub struct SemaphorePermit<'a> {
 }
 
 /// An owned permit from the semaphore.
+/// 来自信号量的所有权许可.
 ///
 /// This type is created by the [`acquire_owned`] method.
 ///
@@ -441,11 +445,13 @@ impl Semaphore {
     /// The maximum number of permits which a semaphore can hold. It is `usize::MAX >> 3`.
     ///
     /// Exceeding this limit typically results in a panic.
+    /// 信号量可以容纳的最大许可数.它是 `usize::MAX >> 3`.
     pub const MAX_PERMITS: usize = super::batch_semaphore::Semaphore::MAX_PERMITS;
 
     /// Creates a new semaphore with the initial number of permits.
     ///
     /// Panics if `permits` exceeds [`Semaphore::MAX_PERMITS`].
+    /// 创建具有初始许可证数量的新信号量
     #[track_caller]
     pub fn new(permits: usize) -> Self {
         #[cfg(all(tokio_unstable, feature = "tracing"))]
@@ -504,6 +510,7 @@ impl Semaphore {
     }
 
     /// Creates a new closed semaphore with 0 permits.
+    /// 创建一个具有 0 个许可证的新的封闭信号量.
     pub(crate) fn new_closed() -> Self {
         Self {
             ll_sem: ll::Semaphore::new_closed(),
@@ -523,6 +530,7 @@ impl Semaphore {
     }
 
     /// Returns the current number of available permits.
+    /// 返回当前可用许可证的数量.
     pub fn available_permits(&self) -> usize {
         self.ll_sem.available_permits()
     }
@@ -530,6 +538,7 @@ impl Semaphore {
     /// Adds `n` new permits to the semaphore.
     ///
     /// The maximum number of permits is [`Semaphore::MAX_PERMITS`], and this function will panic if the limit is exceeded.
+    /// 增加许可数量
     pub fn add_permits(&self, n: usize) {
         self.ll_sem.release(n);
     }
@@ -538,6 +547,7 @@ impl Semaphore {
     ///
     /// If there are insufficient permits and it's not possible to reduce by `n`,
     /// return the number of permits that were actually reduced.
+    /// 减少许可数量
     pub fn forget_permits(&self, n: usize) -> usize {
         self.ll_sem.forget_permits(n)
     }
@@ -576,6 +586,7 @@ impl Semaphore {
     ///
     /// [`AcquireError`]: crate::sync::AcquireError
     /// [`SemaphorePermit`]: crate::sync::SemaphorePermit
+    /// 获取1个许可
     pub async fn acquire(&self) -> Result<SemaphorePermit<'_>, AcquireError> {
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let inner = trace::async_op(
@@ -623,6 +634,7 @@ impl Semaphore {
     ///
     /// [`AcquireError`]: crate::sync::AcquireError
     /// [`SemaphorePermit`]: crate::sync::SemaphorePermit
+    /// 获取n个许可
     pub async fn acquire_many(&self, n: u32) -> Result<SemaphorePermit<'_>, AcquireError> {
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         trace::async_op(
@@ -671,6 +683,7 @@ impl Semaphore {
     /// [`TryAcquireError::Closed`]: crate::sync::TryAcquireError::Closed
     /// [`TryAcquireError::NoPermits`]: crate::sync::TryAcquireError::NoPermits
     /// [`SemaphorePermit`]: crate::sync::SemaphorePermit
+    /// 尝试获取许可
     pub fn try_acquire(&self) -> Result<SemaphorePermit<'_>, TryAcquireError> {
         match self.ll_sem.try_acquire(1) {
             Ok(()) => Ok(SemaphorePermit {
@@ -706,6 +719,7 @@ impl Semaphore {
     /// [`TryAcquireError::Closed`]: crate::sync::TryAcquireError::Closed
     /// [`TryAcquireError::NoPermits`]: crate::sync::TryAcquireError::NoPermits
     /// [`SemaphorePermit`]: crate::sync::SemaphorePermit
+    /// 尝试获取n个许可
     pub fn try_acquire_many(&self, n: u32) -> Result<SemaphorePermit<'_>, TryAcquireError> {
         match self.ll_sem.try_acquire(n as usize) {
             Ok(()) => Ok(SemaphorePermit {
@@ -758,6 +772,7 @@ impl Semaphore {
     /// [`Arc`]: std::sync::Arc
     /// [`AcquireError`]: crate::sync::AcquireError
     /// [`OwnedSemaphorePermit`]: crate::sync::OwnedSemaphorePermit
+    /// 获取所有权许可
     pub async fn acquire_owned(self: Arc<Self>) -> Result<OwnedSemaphorePermit, AcquireError> {
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let inner = trace::async_op(
@@ -954,6 +969,7 @@ impl Semaphore {
     ///     assert_eq!(semaphore2.try_acquire().err(), Some(TryAcquireError::Closed))
     /// }
     /// ```
+    /// 关闭
     pub fn close(&self) {
         self.ll_sem.close();
     }
@@ -986,6 +1002,7 @@ impl<'a> SemaphorePermit<'a> {
     /// // even after the permit is dropped.
     /// assert_eq!(sem.available_permits(), 5);
     /// ```
+    /// 丢弃许可
     pub fn forget(mut self) {
         self.permits = 0;
     }
@@ -1022,6 +1039,7 @@ impl<'a> SemaphorePermit<'a> {
     ///
     /// assert_eq!(sem.available_permits(), 10);
     /// ```
+    /// 合并许可
     #[track_caller]
     pub fn merge(&mut self, mut other: Self) {
         assert!(
@@ -1050,6 +1068,7 @@ impl<'a> SemaphorePermit<'a> {
     /// assert_eq!(p1.num_permits(), 2);
     /// assert_eq!(p2.num_permits(), 1);
     /// ```
+    /// 分割许可
     pub fn split(&mut self, n: usize) -> Option<Self> {
         let n = u32::try_from(n).ok()?;
 
@@ -1066,6 +1085,7 @@ impl<'a> SemaphorePermit<'a> {
     }
 
     /// Returns the number of permits held by `self`.
+    /// 许可数量
     pub fn num_permits(&self) -> usize {
         self.permits as usize
     }

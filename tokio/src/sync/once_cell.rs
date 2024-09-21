@@ -17,6 +17,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 //  2. When `value_set` is true, the `value` field may be accessed immutably by
 //     any thread.
 //
+//  OnceCell的原理是:
+//  1. value_set == false, 持有信号量许可证的线程可以修改 `value` 字段
+//  2. value_set == ture, 持有信号量许可证的线程可以修改 `value` 字段
+//
 // It is an invariant that if the semaphore is closed, then `value_set` is true.
 // The reverse does not necessarily hold — but if not, the semaphore may not
 // have any available permits.
@@ -124,6 +128,7 @@ impl<T> From<T> for OnceCell<T> {
 
 impl<T> OnceCell<T> {
     /// Creates a new empty `OnceCell` instance.
+    /// 创建`OnceCell`
     pub fn new() -> Self {
         OnceCell {
             value_set: AtomicBool::new(false),
@@ -230,6 +235,7 @@ impl<T> OnceCell<T> {
 
     /// Returns `true` if the `OnceCell` currently contains a value, and `false`
     /// otherwise.
+    /// 是否初始化
     pub fn initialized(&self) -> bool {
         // Using acquire ordering so any threads that read a true from this
         // atomic is able to read the value.
@@ -238,20 +244,24 @@ impl<T> OnceCell<T> {
 
     /// Returns `true` if the `OnceCell` currently contains a value, and `false`
     /// otherwise.
+    /// 是否初始化
     fn initialized_mut(&mut self) -> bool {
         *self.value_set.get_mut()
     }
 
     // SAFETY: The OnceCell must not be empty.
+    // 获取值的引用
     unsafe fn get_unchecked(&self) -> &T {
         &*self.value.with(|ptr| (*ptr).as_ptr())
     }
 
     // SAFETY: The OnceCell must not be empty.
+    // 获取可变引用
     unsafe fn get_unchecked_mut(&mut self) -> &mut T {
         &mut *self.value.with_mut(|ptr| (*ptr).as_mut_ptr())
     }
 
+    // 设置值
     fn set_value(&self, value: T, permit: SemaphorePermit<'_>) -> &T {
         // SAFETY: We are holding the only permit on the semaphore.
         unsafe {
@@ -261,7 +271,7 @@ impl<T> OnceCell<T> {
         // Using release ordering so any threads that read a true from this
         // atomic is able to read the value we just stored.
         self.value_set.store(true, Ordering::Release);
-        self.semaphore.close();
+        self.semaphore.close(); // 关闭信号量
         permit.forget();
 
         // SAFETY: We just initialized the cell.
@@ -303,6 +313,7 @@ impl<T> OnceCell<T> {
     ///
     /// [`SetError::AlreadyInitializedError`]: crate::sync::SetError::AlreadyInitializedError
     /// [`SetError::InitializingError`]: crate::sync::SetError::InitializingError
+    /// 设置值
     pub fn set(&self, value: T) -> Result<(), SetError<T>> {
         if self.initialized() {
             return Err(SetError::AlreadyInitializedError(value));
@@ -343,6 +354,7 @@ impl<T> OnceCell<T> {
     /// the value.
     ///
     /// This will deadlock if `f` tries to initialize the cell recursively.
+    /// 获取或者初始化
     pub async fn get_or_init<F, Fut>(&self, f: F) -> &T
     where
         F: FnOnce() -> Fut,
@@ -352,12 +364,14 @@ impl<T> OnceCell<T> {
 
         if self.initialized() {
             // SAFETY: The OnceCell has been fully initialized.
+            // 已经初始化, 直接获取值
             unsafe { self.get_unchecked() }
         } else {
             // Here we try to acquire the semaphore permit. Holding the permit
             // will allow us to set the value of the OnceCell, and prevents
             // other tasks from initializing the OnceCell while we are holding
             // it.
+            // 获取信号量,设置值
             match self.semaphore.acquire().await {
                 Ok(permit) => {
                     debug_assert!(!self.initialized());
@@ -393,6 +407,7 @@ impl<T> OnceCell<T> {
     /// at initializing the value.
     ///
     /// This will deadlock if `f` tries to initialize the cell recursively.
+    /// 获取数据,尝试初始化
     pub async fn get_or_try_init<E, F, Fut>(&self, f: F) -> Result<&T, E>
     where
         F: FnOnce() -> Fut,

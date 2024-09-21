@@ -19,6 +19,7 @@ use std::task::{Context, Poll};
 /// use the [`PollSender`] utility.
 ///
 /// [`PollSender`]: https://docs.rs/tokio-util/latest/tokio_util/sync/struct.PollSender.html
+/// 发送者
 pub struct Sender<T> {
     chan: chan::Tx<T, Semaphore>,
 }
@@ -53,6 +54,7 @@ pub struct Sender<T> {
 ///     assert!(tx_weak.clone().upgrade().is_none());
 /// }
 /// ```
+/// 弱引用发送者
 pub struct WeakSender<T> {
     chan: Arc<chan::Chan<T, Semaphore>>,
 }
@@ -64,6 +66,7 @@ pub struct WeakSender<T> {
 ///
 /// [`Sender::reserve()`]: Sender::reserve
 /// [`Sender::try_reserve()`]: Sender::try_reserve
+/// 授权
 pub struct Permit<'a, T> {
     chan: &'a chan::Tx<T, Semaphore>,
 }
@@ -75,6 +78,7 @@ pub struct Permit<'a, T> {
 ///
 /// [`Sender::reserve_many()`]: Sender::reserve_many
 /// [`Sender::try_reserve_many()`]: Sender::try_reserve_many
+/// 授权的迭代器
 pub struct PermitIterator<'a, T> {
     chan: &'a chan::Tx<T, Semaphore>,
     n: usize,
@@ -92,6 +96,7 @@ pub struct PermitIterator<'a, T> {
 /// [`Permit`]: Permit
 /// [`Sender::reserve_owned()`]: Sender::reserve_owned
 /// [`Sender::try_reserve_owned()`]: Sender::try_reserve_owned
+/// 带所有权的授权
 pub struct OwnedPermit<T> {
     chan: Option<chan::Tx<T, Semaphore>>,
 }
@@ -103,6 +108,7 @@ pub struct OwnedPermit<T> {
 /// This receiver can be turned into a `Stream` using [`ReceiverStream`].
 ///
 /// [`ReceiverStream`]: https://docs.rs/tokio-stream/0.1/tokio_stream/wrappers/struct.ReceiverStream.html
+/// 接收站者
 pub struct Receiver<T> {
     /// The channel receiver.
     chan: chan::Rx<T, Semaphore>,
@@ -152,6 +158,7 @@ pub struct Receiver<T> {
 ///     }
 /// }
 /// ```
+/// 创建带容量的通道
 #[track_caller]
 pub fn channel<T>(buffer: usize) -> (Sender<T>, Receiver<T>) {
     assert!(buffer > 0, "mpsc bounded channel requires buffer > 0");
@@ -237,6 +244,7 @@ impl<T> Receiver<T> {
     ///     assert_eq!(Some("world"), rx.recv().await);
     /// }
     /// ```
+    /// 接收数据
     pub async fn recv(&mut self) -> Option<T> {
         use crate::future::poll_fn;
         poll_fn(|cx| self.chan.recv(cx)).await
@@ -313,6 +321,7 @@ impl<T> Receiver<T> {
     ///     assert_eq!(vec!["first", "second", "third", "fourth"], buffer);
     /// }
     /// ```
+    /// 接收多个数据
     pub async fn recv_many(&mut self, buffer: &mut Vec<T>, limit: usize) -> usize {
         use crate::future::poll_fn;
         poll_fn(|cx| self.chan.recv_many(cx, buffer, limit)).await
@@ -358,6 +367,7 @@ impl<T> Receiver<T> {
     ///     assert_eq!(Err(TryRecvError::Disconnected), rx.try_recv());
     /// }
     /// ```
+    /// 尝试接收数据
     pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
         self.chan.try_recv()
     }
@@ -459,6 +469,7 @@ impl<T> Receiver<T> {
     ///     // Channel closed and no messages are lost.
     /// }
     /// ```
+    /// 关闭通道
     pub fn close(&mut self) {
         self.chan.close();
     }
@@ -572,6 +583,7 @@ impl<T> Receiver<T> {
     /// ```
     /// [`capacity`]: Receiver::capacity
     /// [`max_capacity`]: Receiver::max_capacity
+    /// 通道还能容纳的数据数量
     pub fn capacity(&self) -> usize {
         self.chan.semaphore().semaphore.available_permits()
     }
@@ -606,6 +618,7 @@ impl<T> Receiver<T> {
     /// ```
     /// [`capacity`]: Receiver::capacity
     /// [`max_capacity`]: Receiver::max_capacity
+    /// 通道最大容量
     pub fn max_capacity(&self) -> usize {
         self.chan.semaphore().bound
     }
@@ -631,6 +644,7 @@ impl<T> Receiver<T> {
     /// failure has been resolved. Note that receiving such a wakeup does not
     /// guarantee that the next call will succeed — it could fail with another
     /// spurious failure.
+    /// 轮询数据
     pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
         self.chan.recv(cx)
     }
@@ -703,6 +717,7 @@ impl<T> Receiver<T> {
     ///     assert_eq!(buffer, vec![0,1,2])
     /// }
     /// ```
+    /// 轮询多个数据
     pub fn poll_recv_many(
         &mut self,
         cx: &mut Context<'_>,
@@ -713,11 +728,13 @@ impl<T> Receiver<T> {
     }
 
     /// Returns the number of [`Sender`] handles.
+    /// 发送者的数量
     pub fn sender_strong_count(&self) -> usize {
         self.chan.sender_strong_count()
     }
 
     /// Returns the number of [`WeakSender`] handles.
+    /// 弱引用发送者的数量
     pub fn sender_weak_count(&self) -> usize {
         self.chan.sender_weak_count()
     }
@@ -797,6 +814,7 @@ impl<T> Sender<T> {
     ///     }
     /// }
     /// ```
+    /// 发送数据
     pub async fn send(&self, value: T) -> Result<(), SendError<T>> {
         match self.reserve().await {
             Ok(permit) => {
@@ -905,6 +923,7 @@ impl<T> Sender<T> {
     ///     }
     /// }
     /// ```
+    /// 尝试发送数据
     pub fn try_send(&self, message: T) -> Result<(), TrySendError<T>> {
         match self.chan.semaphore().semaphore.try_acquire(1) {
             Ok(()) => {}
@@ -967,6 +986,7 @@ impl<T> Sender<T> {
     ///     }
     /// }
     /// ```
+    /// 带超时的发送数据
     #[cfg(feature = "time")]
     #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
     pub async fn send_timeout(
@@ -1094,6 +1114,7 @@ impl<T> Sender<T> {
     ///     assert_eq!(rx.recv().await.unwrap(), 456);
     /// }
     /// ```
+    /// 获取信号量
     pub async fn reserve(&self) -> Result<Permit<'_, T>, SendError<()>> {
         self.reserve_inner(1).await?;
         Ok(Permit { chan: &self.chan })
@@ -1155,6 +1176,7 @@ impl<T> Sender<T> {
     ///     assert_eq!(rx.recv().await.unwrap(), 457);
     /// }
     /// ```
+    /// 获取多个数据
     pub async fn reserve_many(&self, n: usize) -> Result<PermitIterator<'_, T>, SendError<()>> {
         self.reserve_inner(n).await?;
         Ok(PermitIterator {
@@ -1250,6 +1272,7 @@ impl<T> Sender<T> {
         })
     }
 
+    // 获取n个信号量
     async fn reserve_inner(&self, n: usize) -> Result<(), SendError<()>> {
         crate::trace::async_trace_leaf().await;
 
@@ -1670,6 +1693,7 @@ impl<T> Permit<'_, T> {
     ///     assert_eq!(rx.recv().await.unwrap(), 456);
     /// }
     /// ```
+    /// 发送数据
     pub fn send(self, value: T) {
         use std::mem;
 
@@ -1687,6 +1711,7 @@ impl<T> Drop for Permit<'_, T> {
         let semaphore = self.chan.semaphore();
 
         // Add the permit back to the semaphore
+        // 增加信号量
         semaphore.add_permit();
 
         // If this is the last sender for this channel, wake the receiver so

@@ -72,6 +72,9 @@ impl<T: ?Sized, U: ?Sized> OwnedRwLockReadGuard<T, U> {
     /// assert_eq!(1, *guard);
     /// # }
     /// ```
+    /// 为锁定数据的组件创建一个新的 `OwnedRwLockReadGuard`.
+    /// 此操作不会失败,因为传入的 `OwnedRwLockReadGuard`
+    /// 已经锁定了数据.
     #[inline]
     pub fn map<F, V: ?Sized>(this: Self, f: F) -> OwnedRwLockReadGuard<T, V>
     where
@@ -119,6 +122,7 @@ impl<T: ?Sized, U: ?Sized> OwnedRwLockReadGuard<T, U> {
     /// assert_eq!(1, *guard);
     /// # }
     /// ```
+    /// 尝试为锁定数据的组件创建新的 [`OwnedRwLockReadGuard`].如果闭包返回 `None`,则返回原始保护.
     #[inline]
     pub fn try_map<F, V: ?Sized>(this: Self, f: F) -> Result<OwnedRwLockReadGuard<T, V>, Self>
     where
@@ -161,6 +165,7 @@ impl<T: ?Sized, U: ?Sized> OwnedRwLockReadGuard<T, U> {
     /// assert!(Arc::ptr_eq(&lock, OwnedRwLockReadGuard::rwlock(&guard)));
     /// # }
     /// ```
+    /// 返回锁
     pub fn rwlock(this: &Self) -> &Arc<RwLock<T>> {
         &this.lock
     }
@@ -194,6 +199,7 @@ where
 
 impl<T: ?Sized, U: ?Sized> Drop for OwnedRwLockReadGuard<T, U> {
     fn drop(&mut self) {
+        // 释放信号量
         self.lock.s.release(1);
 
         #[cfg(all(tokio_unstable, feature = "tracing"))]

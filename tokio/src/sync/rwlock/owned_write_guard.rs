@@ -356,6 +356,7 @@ impl<T: ?Sized> OwnedRwLockWriteGuard<T> {
     /// assert_eq!(*lock.read().await, 2, "second writer obtained write lock");
     /// # }
     /// ```
+    /// 转换成读锁
     pub fn downgrade(self) -> OwnedRwLockReadGuard<T> {
         let this = self.skip_drop();
         let guard = OwnedRwLockReadGuard {

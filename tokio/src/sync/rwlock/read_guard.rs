@@ -10,6 +10,7 @@ use std::{fmt, mem, ops};
 ///
 /// [`read`]: method@crate::sync::RwLock::read
 /// [`RwLock`]: struct@crate::sync::RwLock
+/// 读锁守卫
 #[clippy::has_significant_drop]
 #[must_use = "if unused the RwLock will immediately unlock"]
 pub struct RwLockReadGuard<'a, T: ?Sized> {

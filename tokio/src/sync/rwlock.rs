@@ -20,6 +20,7 @@ pub(crate) use read_guard::RwLockReadGuard;
 pub(crate) use write_guard::RwLockWriteGuard;
 pub(crate) use write_guard_mapped::RwLockMappedWriteGuard;
 
+// 最大的读锁
 #[cfg(not(loom))]
 const MAX_READS: u32 = u32::MAX >> 3;
 
@@ -27,6 +28,7 @@ const MAX_READS: u32 = u32::MAX >> 3;
 const MAX_READS: u32 = 10;
 
 /// An asynchronous reader-writer lock.
+/// 异步读写锁
 ///
 /// This type of lock allows a number of readers or at most one writer at any
 /// point in time. The write portion of this lock typically allows modification
@@ -90,12 +92,15 @@ pub struct RwLock<T: ?Sized> {
     resource_span: tracing::Span,
 
     // maximum number of concurrent readers
+    // 最大并发读者数量
     mr: u32,
 
     //semaphore to coordinate read and write access to T
+    // 信号量来协调对T的读写访问
     s: Semaphore,
 
     //inner data T
+    // 数据
     c: UnsafeCell<T>,
 }
 
@@ -200,6 +205,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// let lock = RwLock::new(5);
     /// ```
+    /// 创建读写锁
     #[track_caller]
     pub fn new(value: T) -> RwLock<T>
     where
@@ -267,6 +273,7 @@ impl<T: ?Sized> RwLock<T> {
     /// # Panics
     ///
     /// Panics if `max_reads` is more than `u32::MAX >> 3`.
+    /// 自定义最大读取数量
     #[track_caller]
     pub fn with_max_readers(value: T, max_reads: u32) -> RwLock<T>
     where
@@ -429,6 +436,7 @@ impl<T: ?Sized> RwLock<T> {
     ///     drop(n);
     /// }
     /// ```
+    /// 获取读锁
     pub async fn read(&self) -> RwLockReadGuard<'_, T> {
         let acquire_fut = async {
             self.s.acquire(1).await.unwrap_or_else(|_| {
@@ -517,6 +525,7 @@ impl<T: ?Sized> RwLock<T> {
     ///     assert!(rwlock.try_write().is_ok());
     /// }
     /// ```
+    /// 同步方法获取读锁
     #[track_caller]
     #[cfg(feature = "sync")]
     pub fn blocking_read(&self) -> RwLockReadGuard<'_, T> {
@@ -574,6 +583,7 @@ impl<T: ?Sized> RwLock<T> {
     ///     drop(n);
     ///}
     /// ```
+    /// 带所有权的读锁
     pub async fn read_owned(self: Arc<Self>) -> OwnedRwLockReadGuard<T> {
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let resource_span = self.resource_span.clone();
@@ -650,6 +660,7 @@ impl<T: ?Sized> RwLock<T> {
     ///     drop(v);
     /// }
     /// ```
+    /// 尝试获取读锁
     pub fn try_read(&self) -> Result<RwLockReadGuard<'_, T>, TryLockError> {
         match self.s.try_acquire(1) {
             Ok(permit) => permit,
@@ -770,8 +781,10 @@ impl<T: ?Sized> RwLock<T> {
     ///   *n = 2;
     ///}
     /// ```
+    /// 获取写锁
     pub async fn write(&self) -> RwLockWriteGuard<'_, T> {
         let acquire_fut = async {
+            // 获取所有信号量
             self.s.acquire(self.mr as usize).await.unwrap_or_else(|_| {
                 // The semaphore was closed. but, we never explicitly close it, and we have a
                 // handle to it through the Arc, which means that this can never happen.

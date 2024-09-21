@@ -2,6 +2,8 @@
 
 //! A multi-producer, multi-consumer channel that only retains the *last* sent
 //! value.
+//! watch通道支持从多个生产者向多个消费者发送多个值.
+//! 但是,通道中仅存储最新值.当发送新值时,消费者会收到通知,但不能保证消费者会看到所有值.
 //!
 //! This channel is useful for watching for changes to a value from multiple
 //! points in the code base, for example, changes to configuration values.
@@ -132,9 +134,11 @@ use std::panic;
 #[derive(Debug)]
 pub struct Receiver<T> {
     /// Pointer to the shared state
+    /// 指向共享状态的指针
     shared: Arc<Shared<T>>,
 
     /// Last observed version
+    /// 最后观察到的版本
     version: Version,
 }
 
@@ -243,24 +247,30 @@ impl<'a, T> Ref<'a, T> {
 
 struct Shared<T> {
     /// The most recent value.
+    /// 最新的值.
     value: RwLock<T>,
 
     /// The current version.
     ///
     /// The lowest bit represents a "closed" state. The rest of the bits
     /// represent the current version.
+    /// 当前版本, 最低位表示关闭状态
     state: AtomicState,
 
     /// Tracks the number of `Receiver` instances.
+    /// `Receiver`的数量
     ref_count_rx: AtomicUsize,
 
     /// Tracks the number of `Sender` instances.
+    /// `Sender`的数量
     ref_count_tx: AtomicUsize,
 
     /// Notifies waiting receivers that the value changed.
+    /// 通知等待的接收者值已改变.
     notify_rx: big_notify::BigNotify,
 
     /// Notifies any task listening for `Receiver` dropped events.
+    /// 通知任何监听`Receiver`丢弃事件的任务.
     notify_tx: Notify,
 }
 
@@ -283,6 +293,7 @@ pub mod error {
     use std::fmt;
 
     /// Error produced when sending a value fails.
+    /// 发送值失败时产生的错误.
     #[derive(PartialEq, Eq, Clone, Copy)]
     pub struct SendError<T>(pub T);
 
@@ -303,6 +314,7 @@ pub mod error {
     impl<T> Error for SendError<T> {}
 
     /// Error produced when receiving a change notification.
+    /// 接收变更通知时产生的错误.
     #[derive(Debug, Clone)]
     pub struct RecvError(pub(super) ());
 
@@ -332,6 +344,8 @@ mod big_notify {
     // When the random number generator is not available, we fall back to
     // circular access.
 
+    // 为了避免在`Notify`内部争用锁,我们存储了它的多个副本.
+    // 然后,我们使用循环访问或随机性将线程分散到不同的`Notify`对象上.
     pub(super) struct BigNotify {
         #[cfg(not(all(not(loom), feature = "sync", any(feature = "rt", feature = "macros"))))]
         next: std::sync::atomic::AtomicUsize,
@@ -351,6 +365,7 @@ mod big_notify {
             }
         }
 
+        // 通知所有waker
         pub(super) fn notify_waiters(&self) {
             for notify in &self.inner {
                 notify.notify_waiters();
@@ -384,6 +399,7 @@ mod state {
     const STEP_SIZE: usize = 2;
 
     /// The version part of the state. The lowest bit is always zero.
+    /// 状态的版本部分。最低位始终为零.
     #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     pub(super) struct Version(usize);
 
@@ -392,6 +408,7 @@ mod state {
     ///
     /// The CLOSED bit tracks whether the Sender has been dropped. Dropping all
     /// receivers does not set it.
+    /// 状态快照.第一位用作 CLOSED 位.其余位用作版本.
     #[derive(Copy, Clone, Debug)]
     pub(super) struct StateSnapshot(usize);
 
@@ -401,11 +418,13 @@ mod state {
     /// and the `Receiver`s use `Acquire` ordering for loading the
     /// current state. This ensures that written values are seen by
     /// the `Receiver`s for a proper handover.
+    /// 存储在原子整数中的状态.
     #[derive(Debug)]
     pub(super) struct AtomicState(AtomicUsize);
 
     impl Version {
         /// Decrements the version.
+        /// 减小版本
         pub(super) fn decrement(&mut self) {
             // Using a wrapping decrement here is required to ensure that the
             // operation is consistent with `std::sync::atomic::AtomicUsize::fetch_add()`
@@ -413,16 +432,19 @@ mod state {
             self.0 = self.0.wrapping_sub(STEP_SIZE);
         }
 
+        // 初始化版本
         pub(super) const INITIAL: Self = Version(0);
     }
 
     impl StateSnapshot {
         /// Extract the version from the state.
+        /// 从状态中提取版本.
         pub(super) fn version(self) -> Version {
             Version(self.0 & !CLOSED_BIT)
         }
 
         /// Is the closed bit set?
+        /// 判断关闭位
         pub(super) fn is_closed(self) -> bool {
             (self.0 & CLOSED_BIT) == CLOSED_BIT
         }
@@ -431,6 +453,7 @@ mod state {
     impl AtomicState {
         /// Create a new `AtomicState` that is not closed and which has the
         /// version set to `Version::INITIAL`.
+        /// 创建初始化状态
         pub(super) fn new() -> Self {
             AtomicState(AtomicUsize::new(Version::INITIAL.0))
         }
@@ -443,11 +466,13 @@ mod state {
         /// of the shared value with the sender side (single writer). The state is always
         /// updated after modifying and before releasing the (exclusive) lock on the
         /// shared value.
+        /// 获取当前状态
         pub(super) fn load(&self) -> StateSnapshot {
             StateSnapshot(self.0.load(Ordering::Acquire))
         }
 
         /// Increment the version counter.
+        /// 增加当前状态
         pub(super) fn increment_version_while_locked(&self) {
             // Use `Release` ordering to ensure that the shared value
             // has been written before updating the version. The shared
@@ -457,6 +482,7 @@ mod state {
         }
 
         /// Set the closed bit in the state.
+        /// 设置关闭位
         pub(super) fn set_closed(&self) {
             self.0.fetch_or(CLOSED_BIT, Ordering::Release);
         }
@@ -499,6 +525,7 @@ mod state {
 ///
 /// [`Sender`]: struct@Sender
 /// [`Receiver`]: struct@Receiver
+/// 创建通道
 pub fn channel<T>(init: T) -> (Sender<T>, Receiver<T>) {
     let shared = Arc::new(Shared {
         value: RwLock::new(init),
@@ -522,6 +549,7 @@ pub fn channel<T>(init: T) -> (Sender<T>, Receiver<T>) {
 }
 
 impl<T> Receiver<T> {
+    // 通过version和shared创建接收者
     fn from_shared(version: Version, shared: Arc<Shared<T>>) -> Self {
         // No synchronization necessary as this is only used as a counter and
         // not memory access.
@@ -574,6 +602,7 @@ impl<T> Receiver<T> {
     /// let (_, rx) = watch::channel("hello");
     /// assert_eq!(*rx.borrow(), "hello");
     /// ```
+    /// 返回对最近发送的值的引用.
     pub fn borrow(&self) -> Ref<'_, T> {
         let inner = self.shared.value.read().unwrap();
 
@@ -621,6 +650,7 @@ impl<T> Receiver<T> {
     ///
     /// [`changed`]: Receiver::changed
     /// [`borrow`]: Receiver::borrow
+    /// 返回对最近发送的值的引用并将该值标记为已看到.
     pub fn borrow_and_update(&mut self) -> Ref<'_, T> {
         let inner = self.shared.value.read().unwrap();
 
@@ -630,6 +660,7 @@ impl<T> Receiver<T> {
         let has_changed = self.version != new_version;
 
         // Mark the shared value as seen by updating the version
+        // 通过更新版本将共享值标记为可见
         self.version = new_version;
 
         Ref { inner, has_changed }
@@ -665,6 +696,8 @@ impl<T> Receiver<T> {
     ///     assert!(rx.has_changed().is_err());
     /// }
     /// ```
+    /// 检查此通道是否包含此接收者尚未看到的消息.
+    /// 新值未标记为已看到.
     pub fn has_changed(&self) -> Result<bool, error::RecvError> {
         // Load the version from the state
         let state = self.shared.state.load();
@@ -685,6 +718,7 @@ impl<T> Receiver<T> {
     ///
     /// This is useful for triggering an initial change notification after
     /// subscribing to synchronize new receivers.
+    /// 将状态标记为已改变.
     pub fn mark_changed(&mut self) {
         self.version.decrement();
     }
@@ -695,6 +729,7 @@ impl<T> Receiver<T> {
     ///
     /// This is useful if you are not interested in the current value
     /// visible in the receiver.
+    /// 将状态标记为未改变.
     pub fn mark_unchanged(&mut self) {
         let current_version = self.shared.state.load().version();
         self.version = current_version;
@@ -742,6 +777,7 @@ impl<T> Receiver<T> {
     ///     assert!(rx.changed().await.is_err());
     /// }
     /// ```
+    /// 版本有改变
     pub async fn changed(&mut self) -> Result<(), error::RecvError> {
         changed_impl(&self.shared, &mut self.version).await
     }
@@ -806,6 +842,7 @@ impl<T> Receiver<T> {
     ///     assert_eq!(*rx2.borrow(), "goodbye");
     /// }
     /// ```
+    /// 等待满足所提供条件的值.
     pub async fn wait_for(
         &mut self,
         mut f: impl FnMut(&T) -> bool,
@@ -823,9 +860,11 @@ impl<T> Receiver<T> {
                     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| f(&inner)));
                     match result {
                         Ok(true) => {
+                            // 等到满足要求的值
                             return Ok(Ref { inner, has_changed });
                         }
                         Ok(false) => {
+                            // 跳过值
                             // Skip the value.
                         }
                         Err(panicked) => {
@@ -844,6 +883,7 @@ impl<T> Receiver<T> {
             }
 
             // Wait for the value to change.
+            // 等待有改变
             closed = changed_impl(&self.shared, &mut self.version).await.is_err();
         }
     }
@@ -860,6 +900,7 @@ impl<T> Receiver<T> {
     /// let (tx3, rx3) = tokio::sync::watch::channel(true);
     /// assert!(!rx3.same_channel(&rx2));
     /// ```
+    /// 如果接收器属于同一个通道,则返回`true`.
     pub fn same_channel(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.shared, &other.shared)
     }
@@ -871,6 +912,9 @@ impl<T> Receiver<T> {
     }
 }
 
+// 可能改变版本,返回Some(Ok(()))表示更新链版本,
+// Some(Err)为更新版本, 发送错误
+// None版本未更新
 fn maybe_changed<T>(
     shared: &Shared<T>,
     version: &mut Version,
@@ -893,6 +937,7 @@ fn maybe_changed<T>(
     None
 }
 
+// 等待版本改变
 async fn changed_impl<T>(
     shared: &Shared<T>,
     version: &mut Version,
@@ -929,6 +974,7 @@ impl<T> Drop for Receiver<T> {
         // not memory access.
         if 1 == self.shared.ref_count_rx.fetch_sub(1, Relaxed) {
             // This is the last `Receiver` handle, tasks waiting on `Sender::closed()`
+            // 最后一个接受者, 通知发送者关闭
             self.shared.notify_tx.notify_waiters();
         }
     }
@@ -951,6 +997,7 @@ impl<T> Sender<T> {
     /// let _rec = sender.subscribe();
     /// assert!(sender.send(4).is_ok());
     /// ```
+    /// 创建发送者
     pub fn new(init: T) -> Self {
         let (tx, _) = channel(init);
         tx
@@ -974,8 +1021,10 @@ impl<T> Sender<T> {
     /// [`send_if_modified`]: Sender::send_if_modified
     /// [`send_modify`]: Sender::send_modify
     /// [`send_replace`]: Sender::send_replace
+    /// 发送数据
     pub fn send(&self, value: T) -> Result<(), error::SendError<T>> {
         // This is pretty much only useful as a hint anyway, so synchronization isn't critical.
+        // 没有接收者, 发送失败
         if 0 == self.receiver_count() {
             return Err(error::SendError(value));
         }
@@ -1014,6 +1063,7 @@ impl<T> Sender<T> {
     /// state_tx.send_modify(|state| state.counter += 1);
     /// assert_eq!(state_rx.borrow().counter, 1);
     /// ```
+    /// 无条件修改监视的值,通知所有接收者.
     pub fn send_modify<F>(&self, modify: F)
     where
         F: FnOnce(&mut T),
@@ -1095,6 +1145,7 @@ impl<T> Sender<T> {
                 Ok(modified) => {
                     if !modified {
                         // Abort, i.e. don't notify receivers if unmodified
+                        // 如果未修改则不通知接收者
                         return false;
                     }
                     // Continue if modified
@@ -1108,6 +1159,7 @@ impl<T> Sender<T> {
                 }
             };
 
+            // 修改状态
             self.shared.state.increment_version_while_locked();
 
             // Release the write lock.
@@ -1118,6 +1170,7 @@ impl<T> Sender<T> {
             drop(lock);
         }
 
+        // 通知接收者
         self.shared.notify_rx.notify_waiters();
 
         true
@@ -1139,6 +1192,7 @@ impl<T> Sender<T> {
     /// assert_eq!(tx.send_replace(2), 1);
     /// assert_eq!(tx.send_replace(3), 2);
     /// ```
+    /// 发送值,返回原值
     pub fn send_replace(&self, mut value: T) -> T {
         // swap old watched value with the new one
         self.send_modify(|old| mem::swap(old, &mut value));
@@ -1167,6 +1221,7 @@ impl<T> Sender<T> {
         let inner = self.shared.value.read().unwrap();
 
         // The sender/producer always sees the current version
+        // 发送者/生产者始终看到当前版本
         let has_changed = false;
 
         Ref { inner, has_changed }
@@ -1294,6 +1349,7 @@ impl<T> Sender<T> {
     ///     assert_eq!(100, *rx.borrow());
     /// }
     /// ```
+    /// 创建接收者
     pub fn subscribe(&self) -> Receiver<T> {
         let shared = self.shared.clone();
         let version = shared.state.load().version();
@@ -1321,6 +1377,7 @@ impl<T> Sender<T> {
     ///     assert_eq!(2, tx.receiver_count());
     /// }
     /// ```
+    /// 接收者数量
     pub fn receiver_count(&self) -> usize {
         self.shared.ref_count_rx.load(Relaxed)
     }
@@ -1337,6 +1394,7 @@ impl<T> Sender<T> {
     /// let (tx3, rx3) = tokio::sync::watch::channel(true);
     /// assert!(!tx3.same_channel(&tx2));
     /// ```
+    /// 判断是否时同一个通道的发送者
     pub fn same_channel(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.shared, &other.shared)
     }
@@ -1345,6 +1403,7 @@ impl<T> Sender<T> {
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
         if self.shared.ref_count_tx.fetch_sub(1, AcqRel) == 1 {
+            // 最后一个发送者, 通知接受者通道已关闭
             self.shared.state.set_closed();
             self.shared.notify_rx.notify_waiters();
         }
