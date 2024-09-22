@@ -51,6 +51,7 @@ cfg_net! {
     ///     }
     /// }
     /// ```
+    /// 一个 TCP 套接字服务器,监听连接.
     pub struct TcpListener {
         io: PollEvented<mio::net::TcpListener>,
     }
@@ -97,6 +98,7 @@ impl TcpListener {
         ///     Ok(())
         /// }
         /// ```
+        /// 创建TcpListener
         pub async fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<TcpListener> {
             let addrs = to_socket_addrs(addr).await?;
 
@@ -157,6 +159,7 @@ impl TcpListener {
     ///     Ok(())
     /// }
     /// ```
+    /// 接受来自该监听器的新传入连接.
     pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
         let (mio, addr) = self
             .io

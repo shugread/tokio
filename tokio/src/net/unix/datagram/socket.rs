@@ -89,6 +89,7 @@ cfg_net_unix! {
     /// # Ok(())
     /// # }
     /// ```
+    /// 代表 Unix 数据报套接字的 I/O 对象.
     #[cfg_attr(docsrs, doc(alias = "uds"))]
     pub struct UnixDatagram {
         io: PollEvented<mio::net::UnixDatagram>,

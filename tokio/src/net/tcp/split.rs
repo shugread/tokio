@@ -29,6 +29,7 @@ cfg_io_util! {
 /// [`TcpStream`]: TcpStream
 /// [`split`]: TcpStream::split()
 /// [`AsyncReadExt`]: trait@crate::io::AsyncReadExt
+/// [`split`] 创建的 [`TcpStream`] 的一半作为读取.
 #[derive(Debug)]
 pub struct ReadHalf<'a>(&'a TcpStream);
 
@@ -45,6 +46,7 @@ pub struct ReadHalf<'a>(&'a TcpStream);
 /// [`AsyncWrite`]: trait@crate::io::AsyncWrite
 /// [`poll_shutdown`]: fn@crate::io::AsyncWrite::poll_shutdown
 /// [`AsyncWriteExt`]: trait@crate::io::AsyncWriteExt
+/// [`split`] 创建的 [`TcpStream`] 的一半作为写入.
 #[derive(Debug)]
 pub struct WriteHalf<'a>(&'a TcpStream);
 

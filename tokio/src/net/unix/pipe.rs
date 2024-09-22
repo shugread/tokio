@@ -64,6 +64,7 @@ cfg_io_util! {
 /// The runtime is usually set implicitly when this function is called
 /// from a future driven by a tokio runtime, otherwise runtime can be set
 /// explicitly with [`Runtime::enter`](crate::runtime::Runtime::enter) function.
+/// 创建一个新的匿名 Unix 管道.
 pub fn pipe() -> io::Result<(Sender, Receiver)> {
     let (tx, rx) = mio_pipe::new()?;
     Ok((Sender::from_mio(tx)?, Receiver::from_mio(rx)?))

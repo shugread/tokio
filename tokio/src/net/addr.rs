@@ -16,6 +16,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV
 ///
 /// This trait is sealed and is intended to be opaque. The details of the trait
 /// will change. Stabilization is pending enhancements to the Rust language.
+/// 无阻塞地转换或解析为一个或多个`SocketAddr`值.
 pub trait ToSocketAddrs: sealed::ToSocketAddrsPriv {}
 
 type ReadyFuture<T> = future::Ready<io::Result<T>>;
@@ -177,6 +178,7 @@ cfg_net! {
             }
 
             // Run DNS lookup on the blocking pool
+            // 在阻塞池上运行 DNS 查找
             let s = self.to_owned();
 
             MaybeReady(sealed::State::Blocking(spawn_blocking(move || {

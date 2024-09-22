@@ -118,6 +118,7 @@ cfg_net! {
     /// }
     /// ```
     ///
+    /// UDP 套接字.
     pub struct UdpSocket {
         io: PollEvented<mio::net::UdpSocket>,
     }
@@ -151,6 +152,7 @@ impl UdpSocket {
 
         for addr in addrs {
             match UdpSocket::bind_addr(addr) {
+                // 绑定成功
                 Ok(socket) => return Ok(socket),
                 Err(e) => last_err = Some(e),
             }
@@ -217,6 +219,7 @@ impl UdpSocket {
     /// # Ok(())
     /// # }
     /// ```
+    /// 从`std::net::UdpSocket`获取
     #[track_caller]
     pub fn from_std(socket: net::UdpSocket) -> io::Result<UdpSocket> {
         let io = mio::net::UdpSocket::from_std(socket);
@@ -308,6 +311,7 @@ impl UdpSocket {
     /// #    Ok(())
     /// # }
     /// ```
+    /// 返回此套接字连接到的远程对等体的套接字地址.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.io.peer_addr()
     }
@@ -336,6 +340,7 @@ impl UdpSocket {
     /// # Ok(())
     /// # }
     /// ```
+    /// 连接 UDP 套接字
     pub async fn connect<A: ToSocketAddrs>(&self, addr: A) -> io::Result<()> {
         let addrs = to_socket_addrs(addr).await?;
         let mut last_err = None;
@@ -423,6 +428,7 @@ impl UdpSocket {
     ///     }
     /// }
     /// ```
+    /// 等待唤醒
     pub async fn ready(&self, interest: Interest) -> io::Result<Ready> {
         let event = self.io.registration().readiness(interest).await?;
         Ok(event.ready)
@@ -478,6 +484,7 @@ impl UdpSocket {
     ///     Ok(())
     /// }
     /// ```
+    /// 等待可写
     pub async fn writable(&self) -> io::Result<()> {
         self.ready(Interest::WRITABLE).await?;
         Ok(())
@@ -512,6 +519,7 @@ impl UdpSocket {
     /// This function may encounter any standard I/O error except `WouldBlock`.
     ///
     /// [`writable`]: method@Self::writable
+    /// 轮询
     pub fn poll_send_ready(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         self.io.registration().poll_write_ready(cx).map_ok(|_| ())
     }
@@ -553,6 +561,7 @@ impl UdpSocket {
     ///     Ok(())
     /// }
     /// ```
+    /// 发送数据
     pub async fn send(&self, buf: &[u8]) -> io::Result<usize> {
         self.io
             .registration()
@@ -583,6 +592,7 @@ impl UdpSocket {
     /// This function may encounter any standard I/O error except `WouldBlock`.
     ///
     /// [`connect`]: method@Self::connect
+    /// 轮询发送
     pub fn poll_send(&self, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         self.io
             .registration()
@@ -637,6 +647,7 @@ impl UdpSocket {
     ///     Ok(())
     /// }
     /// ```
+    /// 尝试发送数据
     pub fn try_send(&self, buf: &[u8]) -> io::Result<usize> {
         self.io
             .registration()
@@ -698,6 +709,7 @@ impl UdpSocket {
     ///     Ok(())
     /// }
     /// ```
+    /// 可写
     pub async fn readable(&self) -> io::Result<()> {
         self.ready(Interest::READABLE).await?;
         Ok(())
@@ -732,6 +744,7 @@ impl UdpSocket {
     /// This function may encounter any standard I/O error except `WouldBlock`.
     ///
     /// [`readable`]: method@Self::readable
+    /// 轮询
     pub fn poll_recv_ready(&self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         self.io.registration().poll_read_ready(cx).map_ok(|_| ())
     }
@@ -773,6 +786,7 @@ impl UdpSocket {
     ///     Ok(())
     /// }
     /// ```
+    /// 接收数据
     pub async fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.io
             .registration()
@@ -803,6 +817,7 @@ impl UdpSocket {
     /// This function may encounter any standard I/O error except `WouldBlock`.
     ///
     /// [`connect`]: method@Self::connect
+    /// 轮询接收数据
     pub fn poll_recv(&self, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
         #[allow(clippy::blocks_in_conditions)]
         let n = ready!(self.io.registration().poll_read_io(cx, || {
@@ -872,6 +887,7 @@ impl UdpSocket {
     ///     Ok(())
     /// }
     /// ```
+    /// 尝试接收数据
     pub fn try_recv(&self, buf: &mut [u8]) -> io::Result<usize> {
         self.io
             .registration()
@@ -928,6 +944,7 @@ impl UdpSocket {
         ///     Ok(())
         /// }
         /// ```
+        /// 读取数据到buf
         pub fn try_recv_buf<B: BufMut>(&self, buf: &mut B) -> io::Result<usize> {
             self.io.registration().try_io(Interest::READABLE, || {
                 let dst = buf.chunk_mut();
@@ -976,6 +993,7 @@ impl UdpSocket {
         ///     Ok(())
         /// }
         /// ```
+        /// 接收数据
         pub async fn recv_buf<B: BufMut>(&self, buf: &mut B) -> io::Result<usize> {
             self.io.registration().async_io(Interest::READABLE, || {
                 let dst = buf.chunk_mut();
@@ -1162,6 +1180,7 @@ impl UdpSocket {
     ///     Ok(())
     /// }
     /// ```
+    /// 发送数据到target
     pub async fn send_to<A: ToSocketAddrs>(&self, buf: &[u8], target: A) -> io::Result<usize> {
         let mut addrs = to_socket_addrs(target).await?;
 
@@ -1191,6 +1210,7 @@ impl UdpSocket {
     /// # Errors
     ///
     /// This function may encounter any standard I/O error except `WouldBlock`.
+    /// 轮询发送数据
     pub fn poll_send_to(
         &self,
         cx: &mut Context<'_>,
@@ -1727,6 +1747,7 @@ impl UdpSocket {
     }
 
     /// Gets the value of the `SO_BROADCAST` option for this socket.
+    /// 获取此套接字的`SO_BROADCAST`选项的值.
     ///
     /// For more information about this option, see [`set_broadcast`].
     ///

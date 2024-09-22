@@ -100,6 +100,7 @@ use self::doc::*;
 /// ```
 ///
 /// [Windows named pipe]: https://docs.microsoft.com/en-us/windows/win32/ipc/named-pipes
+/// [Windows 命名管道] 服务器.
 #[derive(Debug)]
 pub struct NamedPipeServer {
     io: PollEvented<mio_windows::NamedPipe>,

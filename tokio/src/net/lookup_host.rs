@@ -29,6 +29,7 @@ cfg_net! {
     ///     Ok(())
     /// }
     /// ```
+    /// 执行 DNS 解析.
     pub async fn lookup_host<T>(host: T) -> io::Result<impl Iterator<Item = SocketAddr>>
     where
         T: ToSocketAddrs

@@ -66,6 +66,7 @@ cfg_net! {
     /// the stream in one direction.
     ///
     /// [`shutdown()`]: fn@crate::io::AsyncWriteExt::shutdown
+    /// 本地和远程套接字之间的 TCP 流.
     pub struct TcpStream {
         io: PollEvented<mio::net::TcpStream>,
     }
@@ -111,6 +112,7 @@ impl TcpStream {
         ///
         /// [`write_all`]: fn@crate::io::AsyncWriteExt::write_all
         /// [`AsyncWriteExt`]: trait@crate::io::AsyncWriteExt
+        /// 打开与远程主机的 TCP 连接.
         pub async fn connect<A: ToSocketAddrs>(addr: A) -> io::Result<TcpStream> {
             let addrs = to_socket_addrs(addr).await?;
 

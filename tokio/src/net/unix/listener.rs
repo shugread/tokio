@@ -49,6 +49,7 @@ cfg_net_unix! {
     ///     }
     /// }
     /// ```
+    /// 可以接受来自其他 Unix 套接字的连接的 Unix 套接字.
     #[cfg_attr(docsrs, doc(alias = "uds"))]
     pub struct UnixListener {
         io: PollEvented<mio::net::UnixListener>,

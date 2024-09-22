@@ -85,6 +85,7 @@ cfg_net_unix! {
     /// [`AsRawFd`]: std::os::fd::AsRawFd
     /// [`AsRawSocket`]: https://doc.rust-lang.org/std/os/windows/io/trait.AsRawSocket.html
     /// [`socket2`]: https://docs.rs/socket2/
+    /// 尚未转换为 [`UnixStream`],[`UnixDatagram`] 或 [`UnixListener`] 的 Unix 套接字.
     #[derive(Debug)]
     pub struct UnixSocket {
         inner: socket2::Socket,
@@ -148,6 +149,7 @@ impl UnixSocket {
     }
 
     /// Binds the socket to the given address.
+    /// 将套接字绑定到给定的地址.
     ///
     /// This calls the `bind(2)` operating-system function.
     pub fn bind(&self, path: impl AsRef<Path>) -> io::Result<()> {

@@ -38,6 +38,7 @@ cfg_net_unix! {
     ///
     /// [`shutdown()`]: fn@crate::io::AsyncWriteExt::shutdown
     /// [`UnixListener::accept`]: crate::net::UnixListener::accept
+    /// 表示已连接的 Unix 套接字的结构.
     #[cfg_attr(docsrs, doc(alias = "uds"))]
     pub struct UnixStream {
         io: PollEvented<mio::net::UnixStream>,

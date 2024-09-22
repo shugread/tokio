@@ -31,6 +31,7 @@ cfg_io_util! {
 /// [`TcpStream`]: TcpStream
 /// [`into_split`]: TcpStream::into_split()
 /// [`AsyncReadExt`]: trait@crate::io::AsyncReadExt
+/// 拥有由 [`into_split`] 创建的 [`TcpStream`] 的一半读取权.
 #[derive(Debug)]
 pub struct OwnedReadHalf {
     inner: Arc<TcpStream>,
@@ -50,6 +51,7 @@ pub struct OwnedReadHalf {
 /// [`AsyncWrite`]: trait@crate::io::AsyncWrite
 /// [`poll_shutdown`]: fn@crate::io::AsyncWrite::poll_shutdown
 /// [`AsyncWriteExt`]: trait@crate::io::AsyncWriteExt
+/// 拥有由 [`into_split`] 创建的 [`TcpStream`] 的一半写入权.
 #[derive(Debug)]
 pub struct OwnedWriteHalf {
     inner: Arc<TcpStream>,

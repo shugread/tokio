@@ -1,6 +1,7 @@
 use crate::net::unix;
 
 /// Credentials of a process.
+/// 进程的凭证.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub struct UCred {
     /// PID (process ID) of the process.
