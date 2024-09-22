@@ -9,6 +9,7 @@ use std::path::Path;
 /// This is an async version of [`std::fs::set_permissions`][std]
 ///
 /// [std]: fn@std::fs::set_permissions
+/// 更改文件或目录的权限.
 pub async fn set_permissions(path: impl AsRef<Path>, perm: Permissions) -> io::Result<()> {
     let path = path.as_ref().to_owned();
     asyncify(|| std::fs::set_permissions(path, perm)).await

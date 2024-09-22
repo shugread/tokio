@@ -86,6 +86,7 @@ use std::fs::File as StdFile;
 /// # Ok(())
 /// # }
 /// ```
+/// 异步支持的文件
 pub struct File {
     std: Arc<StdFile>,
     inner: Mutex<Inner>,
@@ -93,6 +94,7 @@ pub struct File {
 }
 
 struct Inner {
+    // 状态
     state: State,
 
     /// Errors from writes/flushes are returned in write/flush calls. If a write
@@ -148,6 +150,7 @@ impl File {
     ///
     /// [`read_to_end`]: fn@crate::io::AsyncReadExt::read_to_end
     /// [`AsyncReadExt`]: trait@crate::io::AsyncReadExt
+    /// 打开文件
     pub async fn open(path: impl AsRef<Path>) -> io::Result<File> {
         let path = path.as_ref().to_owned();
         let std = asyncify(|| StdFile::open(path)).await?;
@@ -186,6 +189,7 @@ impl File {
     ///
     /// [`write_all`]: fn@crate::io::AsyncWriteExt::write_all
     /// [`AsyncWriteExt`]: trait@crate::io::AsyncWriteExt
+    /// 创建文件
     pub async fn create(path: impl AsRef<Path>) -> io::Result<File> {
         let path = path.as_ref().to_owned();
         let std_file = asyncify(move || StdFile::create(path)).await?;
@@ -273,6 +277,7 @@ impl File {
     /// let std_file = std::fs::File::open("foo.txt").unwrap();
     /// let file = tokio::fs::File::from_std(std_file);
     /// ```
+    /// 将 [`std::fs::File`] 转换为 [`tokio::fs::File`](File).
     pub fn from_std(std: StdFile) -> File {
         File {
             std: Arc::new(std),
@@ -308,6 +313,7 @@ impl File {
     ///
     /// [`write_all`]: fn@crate::io::AsyncWriteExt::write_all
     /// [`AsyncWriteExt`]: trait@crate::io::AsyncWriteExt
+    /// 尝试将所有操作系统内部元数据同步到磁盘.
     pub async fn sync_all(&self) -> io::Result<()> {
         let mut inner = self.inner.lock().await;
         inner.complete_inflight().await;
@@ -343,6 +349,7 @@ impl File {
     ///
     /// [`write_all`]: fn@crate::io::AsyncWriteExt::write_all
     /// [`AsyncWriteExt`]: trait@crate::io::AsyncWriteExt
+    /// 该函数与 `sync_all` 类似,不同之处在于它可能不会将文件元数据同步到文件系统.
     pub async fn sync_data(&self) -> io::Result<()> {
         let mut inner = self.inner.lock().await;
         inner.complete_inflight().await;
@@ -381,6 +388,7 @@ impl File {
     ///
     /// [`write_all`]: fn@crate::io::AsyncWriteExt::write_all
     /// [`AsyncWriteExt`]: trait@crate::io::AsyncWriteExt
+    /// 截断或扩展底层文件,将此文件的大小更新为size.
     pub async fn set_len(&self, size: u64) -> io::Result<()> {
         let mut inner = self.inner.lock().await;
         inner.complete_inflight().await;
@@ -390,6 +398,7 @@ impl File {
             _ => unreachable!(),
         };
 
+        // 判断buf中是否有数据
         let seek = if !buf.is_empty() {
             Some(SeekFrom::Current(buf.discard_read()))
         } else {
@@ -412,9 +421,10 @@ impl File {
 
         let (op, buf) = match inner.state {
             State::Idle(_) => unreachable!(),
-            State::Busy(ref mut rx) => rx.await?,
+            State::Busy(ref mut rx) => rx.await?, // 等待完成
         };
 
+        // 设置空闲状态
         inner.state = State::Idle(Some(buf));
 
         match op {
@@ -440,6 +450,7 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
+    /// 查询有关底层文件的元数据.
     pub async fn metadata(&self) -> io::Result<Metadata> {
         let std = self.std.clone();
         asyncify(move || std.metadata()).await
@@ -460,6 +471,8 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
+    /// 创建一个新的 `File` 实例,该实例与现有 `File` 实例共享相同的底层文件句柄.
+    /// 读取,写入和查找将同时影响两个 File 实例.
     pub async fn try_clone(&self) -> io::Result<File> {
         self.inner.lock().await.complete_inflight().await;
         let std = self.std.clone();
@@ -545,6 +558,7 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
+    /// 更改基础文件的权限.
     pub async fn set_permissions(&self, perm: Permissions) -> io::Result<()> {
         let std = self.std.clone();
         asyncify(move || std.set_permissions(perm)).await
@@ -574,6 +588,7 @@ impl File {
     /// # Ok(())
     /// # }
     /// ```
+    /// 设置底层 [`AsyncRead`] / [`AsyncWrite`] 操作的最大缓冲区大小.
     pub fn set_max_buf_size(&mut self, max_buf_size: usize) {
         self.max_buf_size = max_buf_size;
     }
@@ -594,16 +609,20 @@ impl AsyncRead for File {
                 State::Idle(ref mut buf_cell) => {
                     let mut buf = buf_cell.take().unwrap();
 
+                    // 检查缓冲区(buf_cell)是否有数据可供读取
                     if !buf.is_empty() {
+                        // 将数据拷贝到dst
                         buf.copy_to(dst);
                         *buf_cell = Some(buf);
                         return Poll::Ready(Ok(()));
                     }
 
+                    // 目标缓冲区分配足够的空间
                     buf.ensure_capacity_for(dst, me.max_buf_size);
                     let std = me.std.clone();
 
                     inner.state = State::Busy(spawn_blocking(move || {
+                        // 数据拷贝到buf
                         let res = buf.read_from(&mut &*std);
                         (Operation::Read(res), buf)
                     }));
@@ -613,30 +632,36 @@ impl AsyncRead for File {
 
                     match op {
                         Operation::Read(Ok(_)) => {
+                            // 拷贝到dst
                             buf.copy_to(dst);
                             inner.state = State::Idle(Some(buf));
                             return Poll::Ready(Ok(()));
                         }
                         Operation::Read(Err(e)) => {
                             assert!(buf.is_empty());
-
+                            // 出错
                             inner.state = State::Idle(Some(buf));
                             return Poll::Ready(Err(e));
                         }
                         Operation::Write(Ok(())) => {
+                            // 更新状态
                             assert!(buf.is_empty());
                             inner.state = State::Idle(Some(buf));
                             continue;
                         }
                         Operation::Write(Err(e)) => {
+                            // 写入出错
                             assert!(inner.last_write_err.is_none());
+                            // 更新错误
                             inner.last_write_err = Some(e.kind());
                             inner.state = State::Idle(Some(buf));
                         }
                         Operation::Seek(result) => {
                             assert!(buf.is_empty());
                             inner.state = State::Idle(Some(buf));
+                            // 更新状态
                             if let Ok(pos) = result {
+                                // 更新文件位置
                                 inner.pos = pos;
                             }
                             continue;
@@ -650,10 +675,12 @@ impl AsyncRead for File {
 
 impl AsyncSeek for File {
     fn start_seek(self: Pin<&mut Self>, mut pos: SeekFrom) -> io::Result<()> {
+        // 开始一个异步寻址操作
         let me = self.get_mut();
         let inner = me.inner.get_mut();
 
         match inner.state {
+            // 如果正在进行其他文件操作(状态为 Busy),则返回错误
             State::Busy(_) => Err(io::Error::new(
                 io::ErrorKind::Other,
                 "other file operation is pending, call poll_complete before start_seek",
@@ -662,10 +689,13 @@ impl AsyncSeek for File {
                 let mut buf = buf_cell.take().unwrap();
 
                 // Factor in any unread data from the buf
+                // 考虑来自 buf 的任何未读数据
                 if !buf.is_empty() {
+                    // 丢弃未读数据
                     let n = buf.discard_read();
 
                     if let SeekFrom::Current(ref mut offset) = pos {
+                        // 调整pos
                         *offset += n;
                     }
                 }
@@ -673,6 +703,7 @@ impl AsyncSeek for File {
                 let std = me.std.clone();
 
                 inner.state = State::Busy(spawn_blocking(move || {
+                    // 寻址操作
                     let res = (&*std).seek(pos);
                     (Operation::Seek(res), buf)
                 }));
@@ -687,9 +718,11 @@ impl AsyncSeek for File {
 
         loop {
             match inner.state {
-                State::Idle(_) => return Poll::Ready(Ok(inner.pos)),
+                State::Idle(_) => return Poll::Ready(Ok(inner.pos)), // 表示寻址已完成,返回当前文件位置 `inner.pos`
                 State::Busy(ref mut rx) => {
+                    // 等待完成
                     let (op, buf) = ready!(Pin::new(rx).poll(cx))?;
+                    // 更新状态为 Idle 并处理结果
                     inner.state = State::Idle(Some(buf));
 
                     match op {
@@ -701,6 +734,7 @@ impl AsyncSeek for File {
                         Operation::Write(_) => {}
                         Operation::Seek(res) => {
                             if let Ok(pos) = res {
+                                // 更新地址
                                 inner.pos = pos;
                             }
                             return Poll::Ready(res);
@@ -723,6 +757,7 @@ impl AsyncWrite for File {
         let inner = me.inner.get_mut();
 
         if let Some(e) = inner.last_write_err.take() {
+            // 如果有上次写入的错误,立即返回
             return Poll::Ready(Err(e.into()));
         }
 
@@ -731,6 +766,7 @@ impl AsyncWrite for File {
                 State::Idle(ref mut buf_cell) => {
                     let mut buf = buf_cell.take().unwrap();
 
+                    // 取出缓冲区,处理未读数据
                     let seek = if !buf.is_empty() {
                         Some(SeekFrom::Current(buf.discard_read()))
                     } else {
@@ -742,8 +778,10 @@ impl AsyncWrite for File {
 
                     let blocking_task_join_handle = spawn_mandatory_blocking(move || {
                         let res = if let Some(seek) = seek {
+                            // 更新seek再写入数据
                             (&*std).seek(seek).and_then(|_| buf.write_to(&mut &*std))
                         } else {
+                            // 写入数据
                             buf.write_to(&mut &*std)
                         };
 
@@ -758,6 +796,7 @@ impl AsyncWrite for File {
                     return Poll::Ready(Ok(n));
                 }
                 State::Busy(ref mut rx) => {
+                    // 等待之前的写入操作完成
                     let (op, buf) = ready!(Pin::new(rx).poll(cx))?;
                     inner.state = State::Idle(Some(buf));
 
@@ -793,6 +832,7 @@ impl AsyncWrite for File {
         let me = self.get_mut();
         let inner = me.inner.get_mut();
 
+        // 检查是否有写入错误
         if let Some(e) = inner.last_write_err.take() {
             return Poll::Ready(Err(e.into()));
         }
@@ -808,13 +848,16 @@ impl AsyncWrite for File {
                         None
                     };
 
+                    // 将多个缓冲区的数据复制到内部缓冲区
                     let n = buf.copy_from_bufs(bufs, me.max_buf_size);
                     let std = me.std.clone();
 
                     let blocking_task_join_handle = spawn_mandatory_blocking(move || {
                         let res = if let Some(seek) = seek {
+                            // 更新seek再写入数据
                             (&*std).seek(seek).and_then(|_| buf.write_to(&mut &*std))
                         } else {
+                            // 写入数据
                             buf.write_to(&mut &*std)
                         };
 
@@ -953,17 +996,21 @@ impl Inner {
         }
     }
 
+    // 完成状态
     fn poll_flush(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        // 有错误返回错误
         if let Some(e) = self.last_write_err.take() {
             return Poll::Ready(Err(e.into()));
         }
 
         let (op, buf) = match self.state {
-            State::Idle(_) => return Poll::Ready(Ok(())),
+            State::Idle(_) => return Poll::Ready(Ok(())), // 空闲状态直接返回
+            // 忙碌状态一直轮询
             State::Busy(ref mut rx) => ready!(Pin::new(rx).poll(cx))?,
         };
 
         // The buffer is not used here
+        // 更新状态为空闲
         self.state = State::Idle(Some(buf));
 
         match op {

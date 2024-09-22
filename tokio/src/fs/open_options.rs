@@ -78,6 +78,7 @@ use std::os::windows::fs::OpenOptionsExt;
 ///     Ok(())
 /// }
 /// ```
+/// 可用于配置文件打开方式的选项和标志.
 #[derive(Clone, Debug)]
 pub struct OpenOptions(StdOpenOptions);
 
@@ -127,6 +128,7 @@ impl OpenOptions {
     ///     Ok(())
     /// }
     /// ```
+    /// 可读
     pub fn read(&mut self, read: bool) -> &mut OpenOptions {
         self.0.read(read);
         self
@@ -157,6 +159,7 @@ impl OpenOptions {
     ///     Ok(())
     /// }
     /// ```
+    /// 可写
     pub fn write(&mut self, write: bool) -> &mut OpenOptions {
         self.0.write(write);
         self
@@ -216,6 +219,7 @@ impl OpenOptions {
     ///     Ok(())
     /// }
     /// ```
+    /// 可添加
     pub fn append(&mut self, append: bool) -> &mut OpenOptions {
         self.0.append(append);
         self
@@ -249,6 +253,7 @@ impl OpenOptions {
     ///     Ok(())
     /// }
     /// ```
+    /// 设置截断前一个文件的选项.
     pub fn truncate(&mut self, truncate: bool) -> &mut OpenOptions {
         self.0.truncate(truncate);
         self
@@ -285,6 +290,7 @@ impl OpenOptions {
     ///     Ok(())
     /// }
     /// ```
+    /// 设置创建新文件的选项.
     pub fn create(&mut self, create: bool) -> &mut OpenOptions {
         self.0.create(create);
         self
@@ -328,6 +334,7 @@ impl OpenOptions {
     ///     Ok(())
     /// }
     /// ```
+    /// 设置选项以始终创建新文件.
     pub fn create_new(&mut self, create_new: bool) -> &mut OpenOptions {
         self.0.create_new(create_new);
         self
@@ -385,6 +392,7 @@ impl OpenOptions {
     /// [`NotFound`]: std::io::ErrorKind::NotFound
     /// [`Other`]: std::io::ErrorKind::Other
     /// [`PermissionDenied`]: std::io::ErrorKind::PermissionDenied
+    /// 打开文件
     pub async fn open(&self, path: impl AsRef<Path>) -> io::Result<File> {
         let path = path.as_ref().to_owned();
         let opts = self.0.clone();
@@ -426,6 +434,7 @@ feature! {
         ///     Ok(())
         /// }
         /// ```
+        /// 设置新文件创建的模式位.
         pub fn mode(&mut self, mode: u32) -> &mut OpenOptions {
             self.as_inner_mut().mode(mode);
             self
@@ -457,6 +466,7 @@ feature! {
         ///     Ok(())
         /// }
         /// ```
+        /// 将自定义标志传递给`open`的`flags`参数.
         pub fn custom_flags(&mut self, flags: i32) -> &mut OpenOptions {
             self.as_inner_mut().custom_flags(flags);
             self
@@ -489,6 +499,7 @@ cfg_windows! {
         /// ```
         ///
         /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
+        /// 使用指定的值覆盖对 [`CreateFile`] 调用的 `dwDesiredAccess` 参数.
         pub fn access_mode(&mut self, access: u32) -> &mut OpenOptions {
             self.as_inner_mut().access_mode(access);
             self
@@ -522,6 +533,7 @@ cfg_windows! {
         /// ```
         ///
         /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
+        /// 使用指定的值覆盖对 [`CreateFile`] 调用的 `dwShareMode` 参数.
         pub fn share_mode(&mut self, share: u32) -> &mut OpenOptions {
             self.as_inner_mut().share_mode(share);
             self
@@ -554,6 +566,8 @@ cfg_windows! {
         ///
         /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
         /// [`CreateFile2`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfile2
+        /// 将对 [`CreateFile2`] 调用的 `dwFileFlags` 参数的额外标志设置为指定值(或将其与 `attributes` 和
+        /// `security_qos_flags` 结合起来以设置 [`CreateFile`] 的 `dwFlagsAndAttributes`).
         pub fn custom_flags(&mut self, flags: u32) -> &mut OpenOptions {
             self.as_inner_mut().custom_flags(flags);
             self
@@ -593,6 +607,8 @@ cfg_windows! {
         ///
         /// [`CreateFile`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
         /// [`CreateFile2`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfile2
+        /// 将对 [`CreateFile2`] 的调用的 `dwFileAttributes` 参数设置为指定值(或将其与 `custom_flags` 和
+        /// `security_qos_flags` 结合起来以设置 [`CreateFile`] 的 `dwFlagsAndAttributes`).
         pub fn attributes(&mut self, attributes: u32) -> &mut OpenOptions {
             self.as_inner_mut().attributes(attributes);
             self
@@ -641,6 +657,8 @@ cfg_windows! {
         /// [`CreateFile2`]: https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfile2
         /// [Impersonation Levels]:
         ///     https://docs.microsoft.com/en-us/windows/win32/api/winnt/ne-winnt-security_impersonation_level
+        /// 将对 [`CreateFile2`] 的调用的 `dwSecurityQosFlags` 参数设置为指定值(或将其与 `custom_flags` 和
+        /// `attributes` 结合起来以设置 [`CreateFile`] 的 `dwFlagsAndAttributes`).
         pub fn security_qos_flags(&mut self, flags: u32) -> &mut OpenOptions {
             self.as_inner_mut().security_qos_flags(flags);
             self

@@ -9,6 +9,7 @@ use std::path::Path;
 /// This is an async version of [`std::fs::symlink_metadata`][std]
 ///
 /// [std]: fn@std::fs::symlink_metadata
+/// 查询文件系统元数据中的路径.
 pub async fn symlink_metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     let path = path.as_ref().to_owned();
     asyncify(|| std::fs::symlink_metadata(path)).await

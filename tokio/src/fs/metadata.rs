@@ -40,6 +40,7 @@ use std::path::Path;
 ///     Ok(())
 /// }
 /// ```
+/// 给定路径,查询文件系统以获取有关文件,目录等的信息.
 pub async fn metadata(path: impl AsRef<Path>) -> io::Result<Metadata> {
     let path = path.as_ref().to_owned();
     asyncify(|| std::fs::metadata(path)).await

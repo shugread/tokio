@@ -43,6 +43,7 @@ use std::path::{Path, PathBuf};
 ///     Ok(())
 /// }
 /// ```
+/// 返回路径的规范,绝对形式,其中所有中间组件均已规范化,并且符号链接已解析.
 pub async fn canonicalize(path: impl AsRef<Path>) -> io::Result<PathBuf> {
     let path = path.as_ref().to_owned();
     asyncify(move || std::fs::canonicalize(path)).await

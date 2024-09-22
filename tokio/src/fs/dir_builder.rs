@@ -4,15 +4,18 @@ use std::io;
 use std::path::Path;
 
 /// A builder for creating directories in various manners.
+/// 用于以各种方式创建目录的构建器.
 ///
 /// This is a specialized version of [`std::fs::DirBuilder`] for usage on
 /// the Tokio runtime.
 #[derive(Debug, Default)]
 pub struct DirBuilder {
     /// Indicates whether to create parent directories if they are missing.
+    /// 表示如果父目录缺失则是否创建.
     recursive: bool,
 
     /// Sets the Unix mode for newly created directories.
+    /// 为新创建的目录设置 Unix 模式.
     #[cfg(unix)]
     pub(super) mode: Option<u32>,
 }
@@ -88,6 +91,7 @@ impl DirBuilder {
     ///     Ok(())
     /// }
     /// ```
+    /// 创建目录
     pub async fn create(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let path = path.as_ref().to_owned();
         let mut builder = std::fs::DirBuilder::new();

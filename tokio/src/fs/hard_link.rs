@@ -36,6 +36,7 @@ use std::path::Path;
 ///     Ok(())
 /// }
 /// ```
+/// 在文件系统上创建一个新的硬链接.
 pub async fn hard_link(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
     let src = src.as_ref().to_owned();
     let dst = dst.as_ref().to_owned();

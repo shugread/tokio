@@ -29,11 +29,13 @@ const CHUNK_SIZE: usize = 32;
 /// operation on a separate thread pool using [`spawn_blocking`].
 ///
 /// [`spawn_blocking`]: crate::task::spawn_blocking
+/// 返回目录内的条目流.
 pub async fn read_dir(path: impl AsRef<Path>) -> io::Result<ReadDir> {
     let path = path.as_ref().to_owned();
     asyncify(|| -> io::Result<ReadDir> {
         let mut std = std::fs::read_dir(path)?;
         let mut buf = VecDeque::with_capacity(CHUNK_SIZE);
+        // false表示DirEntry不足CHUNK_SIZE个
         let remain = ReadDir::next_chunk(&mut buf, &mut std);
 
         Ok(ReadDir(State::Idle(Some((buf, std, remain)))))
@@ -75,6 +77,7 @@ impl ReadDir {
     /// # Cancel safety
     ///
     /// This method is cancellation safe.
+    /// 返回目录流中的下一个条目.
     pub async fn next_entry(&mut self) -> io::Result<Option<DirEntry>> {
         use crate::future::poll_fn;
         poll_fn(|cx| self.poll_next_entry(cx)).await
@@ -105,25 +108,30 @@ impl ReadDir {
                     let (buf, _, ref remain) = data.as_mut().unwrap();
 
                     if let Some(ent) = buf.pop_front() {
+                        // buf还有DirEntry
                         return Poll::Ready(ent.map(Some));
                     } else if !remain {
+                        // 读取完DirEntry
                         return Poll::Ready(Ok(None));
                     }
 
                     let (mut buf, mut std, _) = data.take().unwrap();
 
                     self.0 = State::Pending(spawn_blocking(move || {
+                        // 继续读取DirEntry
                         let remain = ReadDir::next_chunk(&mut buf, &mut std);
                         (buf, std, remain)
                     }));
                 }
                 State::Pending(ref mut rx) => {
+                    // 轮询任务
                     self.0 = State::Idle(Some(ready!(Pin::new(rx).poll(cx))?));
                 }
             }
         }
     }
 
+    // 最多读取CHUNK_SIZE个DirEntry
     fn next_chunk(buf: &mut VecDeque<io::Result<DirEntry>>, std: &mut std::fs::ReadDir) -> bool {
         for _ in 0..CHUNK_SIZE {
             let ret = match std.next() {

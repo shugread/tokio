@@ -22,6 +22,7 @@ use std::path::Path;
 /// # Ok(())
 /// # }
 /// ```
+/// 如果路径指向现有实体,则返回`Ok(true)`.
 pub async fn try_exists(path: impl AsRef<Path>) -> io::Result<bool> {
     let path = path.as_ref().to_owned();
     asyncify(move || path.try_exists()).await

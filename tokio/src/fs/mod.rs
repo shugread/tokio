@@ -302,6 +302,7 @@ use crate::blocking::spawn_blocking;
 #[cfg(test)]
 use mocks::spawn_blocking;
 
+// 闭包转Future
 pub(crate) async fn asyncify<F, T>(f: F) -> io::Result<T>
 where
     F: FnOnce() -> io::Result<T> + Send + 'static,

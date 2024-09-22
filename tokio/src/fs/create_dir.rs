@@ -44,6 +44,7 @@ use std::path::Path;
 ///     Ok(())
 /// }
 /// ```
+/// 创建目录
 pub async fn create_dir(path: impl AsRef<Path>) -> io::Result<()> {
     let path = path.as_ref().to_owned();
     asyncify(move || std::fs::create_dir(path)).await

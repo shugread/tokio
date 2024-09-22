@@ -23,6 +23,7 @@ use std::{io, path::Path};
 /// # Ok(())
 /// # }
 /// ```
+/// 将打开一个文件进行写入,并将 `contents` 的全部内容写入其中.
 pub async fn write(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> io::Result<()> {
     let path = path.as_ref().to_owned();
     let contents = contents.as_ref().to_owned();

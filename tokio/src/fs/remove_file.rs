@@ -10,6 +10,7 @@ use std::path::Path;
 /// removal).
 ///
 /// This is an async version of [`std::fs::remove_file`].
+/// 从文件系统中删除文件.
 pub async fn remove_file(path: impl AsRef<Path>) -> io::Result<()> {
     let path = path.as_ref().to_owned();
     asyncify(move || std::fs::remove_file(path)).await

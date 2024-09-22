@@ -43,6 +43,7 @@ use std::{io, path::Path};
 ///     Ok(())
 /// }
 /// ```
+/// 将文件的全部内容读入字节向量.
 pub async fn read(path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
     let path = path.as_ref().to_owned();
     asyncify(move || std::fs::read(path)).await

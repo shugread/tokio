@@ -24,6 +24,7 @@ use std::{io, path::Path};
 /// # Ok(())
 /// # }
 /// ```
+/// 将打开一个文件进行读取并将整个内容读入一个字符串并返回该字符串.
 pub async fn read_to_string(path: impl AsRef<Path>) -> io::Result<String> {
     let path = path.as_ref().to_owned();
     asyncify(move || std::fs::read_to_string(path)).await
