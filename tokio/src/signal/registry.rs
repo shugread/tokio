@@ -11,6 +11,7 @@ pub(crate) type EventId = usize;
 /// and what listeners are registered.
 #[derive(Debug)]
 pub(crate) struct EventInfo {
+    // 如果为true, 标识信号到达
     pending: AtomicBool,
     tx: watch::Sender<()>,
 }
@@ -73,6 +74,7 @@ impl<S> Registry<S> {
 
 impl<S: Storage> Registry<S> {
     /// Registers a new listener for `event_id`.
+    /// 为`event_id`注册一个新的监听器.
     fn register_listener(&self, event_id: EventId) -> watch::Receiver<()> {
         self.storage
             .event_info(event_id)
@@ -83,6 +85,7 @@ impl<S: Storage> Registry<S> {
 
     /// Marks `event_id` as having been delivered, without broadcasting it to
     /// any listeners.
+    /// 将 `event_id` 标记为已传送,但不将其广播给任何侦听器.
     fn record_event(&self, event_id: EventId) {
         if let Some(event_info) = self.storage.event_info(event_id) {
             event_info.pending.store(true, Ordering::SeqCst);
@@ -92,15 +95,18 @@ impl<S: Storage> Registry<S> {
     /// Broadcasts all previously recorded events to their respective listeners.
     ///
     /// Returns `true` if an event was delivered to at least one listener.
+    /// 将所有先前记录的事件广播给各自的听众.
     fn broadcast(&self) -> bool {
         let mut did_notify = false;
         self.storage.for_each(|event_info| {
             // Any signal of this kind arrived since we checked last?
+            // 检查信号是否到达
             if !event_info.pending.swap(false, Ordering::SeqCst) {
                 return;
             }
 
             // Ignore errors if there are no listeners
+            // 唤醒到达的信号
             if event_info.tx.send(()).is_ok() {
                 did_notify = true;
             }
@@ -125,12 +131,14 @@ impl ops::Deref for Globals {
 
 impl Globals {
     /// Registers a new listener for `event_id`.
+    /// 为`event_id`注册一个新的监听器.
     pub(crate) fn register_listener(&self, event_id: EventId) -> watch::Receiver<()> {
         self.registry.register_listener(event_id)
     }
 
     /// Marks `event_id` as having been delivered, without broadcasting it to
     /// any listeners.
+    /// 将`event_id`标记为已传送,但不将其广播给任何侦听器.
     pub(crate) fn record_event(&self, event_id: EventId) {
         self.registry.record_event(event_id);
     }
@@ -138,6 +146,7 @@ impl Globals {
     /// Broadcasts all previously recorded events to their respective listeners.
     ///
     /// Returns `true` if an event was delivered to at least one listener.
+    /// 将所有先前记录的事件广播给各自的听众.
     pub(crate) fn broadcast(&self) -> bool {
         self.registry.broadcast()
     }

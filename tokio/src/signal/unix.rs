@@ -18,15 +18,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
 use std::task::{Context, Poll};
 
+// 存放所有信号信息
 pub(crate) type OsStorage = Vec<SignalInfo>;
 
 impl Init for OsStorage {
     fn init() -> Self {
         // There are reliable signals ranging from 1 to 33 available on every Unix platform.
+        // 每个 Unix 平台上都有从 1 到 33 的可靠信号.
         #[cfg(not(target_os = "linux"))]
         let possible = 0..=33;
 
         // On Linux, there are additional real-time signals available.
+        // 在 Linux 上,有额外的实时信号可用.
         #[cfg(target_os = "linux")]
         let possible = 0..=libc::SIGRTMAX();
 
@@ -62,6 +65,7 @@ impl Init for OsExtraData {
 }
 
 /// Represents the specific kind of signal to listen for.
+/// 表示要监听的特定类型的信号.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct SignalKind(libc::c_int);
 
@@ -82,6 +86,7 @@ impl SignalKind {
     // unlikely to change to other types, but technically libc can change this
     // in the future minor version.
     // See https://github.com/tokio-rs/tokio/issues/3767 for more.
+    // 允许监听任何有效的操作系统信号.
     pub const fn from_raw(signum: std::os::raw::c_int) -> Self {
         Self(signum as libc::c_int)
     }
@@ -101,6 +106,8 @@ impl SignalKind {
     ///
     /// On Unix systems this signal is sent when a real-time timer has expired.
     /// By default, the process is terminated by this signal.
+    /// 在 Unix 系统上,当实时计时器到期时会发送此信号.
+    /// 默认情况下,此信号会终止进程.
     pub const fn alarm() -> Self {
         Self(libc::SIGALRM)
     }
@@ -109,6 +116,8 @@ impl SignalKind {
     ///
     /// On Unix systems this signal is sent when the status of a child process
     /// has changed. By default, this signal is ignored.
+    /// 在 Unix 系统上,当子进程的状态发生变化时会发送此信号.
+    /// 默认情况下,此信号被忽略.
     pub const fn child() -> Self {
         Self(libc::SIGCHLD)
     }
@@ -117,6 +126,8 @@ impl SignalKind {
     ///
     /// On Unix systems this signal is sent when the terminal is disconnected.
     /// By default, the process is terminated by this signal.
+    /// 在 Unix 系统上,当终端断开连接时会发送此信号.
+    /// 默认情况下,进程由此信号终止.
     pub const fn hangup() -> Self {
         Self(libc::SIGHUP)
     }
@@ -125,6 +136,7 @@ impl SignalKind {
     ///
     /// On Unix systems this signal is sent to request a status update from the
     /// process. By default, this signal is ignored.
+    /// 在 Unix 系统上,发送此信号以请求进程的状态更新.默认情况下,此信号被忽略.
     #[cfg(any(
         target_os = "dragonfly",
         target_os = "freebsd",
@@ -140,6 +152,7 @@ impl SignalKind {
     ///
     /// On Unix systems this signal is sent to interrupt a program.
     /// By default, the process is terminated by this signal.
+    /// 在 Unix 系统上,发送此信号来中断程序.默认情况下,此信号终止进程.
     pub const fn interrupt() -> Self {
         Self(libc::SIGINT)
     }
@@ -148,6 +161,8 @@ impl SignalKind {
     ///
     /// On Unix systems this signal is sent when I/O operations are possible
     /// on some file descriptor. By default, this signal is ignored.
+    /// 在 Unix 系统上,当某个文件描述符上可以进行 I/O 操作时,会发送此信号.
+    /// 默认情况下,此信号被忽略.
     pub const fn io() -> Self {
         Self(libc::SIGIO)
     }
@@ -157,6 +172,8 @@ impl SignalKind {
     /// On Unix systems this signal is sent when the process attempts to write
     /// to a pipe which has no reader. By default, the process is terminated by
     /// this signal.
+    /// 在 Unix 系统上,当进程尝试写入没有读取器的管道时,会发送此信号.
+    /// 默认情况下,此信号会终止进程.
     pub const fn pipe() -> Self {
         Self(libc::SIGPIPE)
     }
@@ -166,6 +183,8 @@ impl SignalKind {
     /// On Unix systems this signal is sent to issue a shutdown of the
     /// process, after which the OS will dump the process core.
     /// By default, the process is terminated by this signal.
+    /// 在 Unix 系统上,发送此信号表示关闭进程,之后操作系统将转储进程核心.
+    /// 默认情况下,此信号终止进程.
     pub const fn quit() -> Self {
         Self(libc::SIGQUIT)
     }
@@ -174,6 +193,8 @@ impl SignalKind {
     ///
     /// On Unix systems this signal is sent to issue a shutdown of the
     /// process. By default, the process is terminated by this signal.
+    /// 在 Unix 系统上,发送此信号以发出进程关闭信号.
+    /// 默认情况下,此信号终止进程.
     pub const fn terminate() -> Self {
         Self(libc::SIGTERM)
     }
@@ -182,6 +203,8 @@ impl SignalKind {
     ///
     /// On Unix systems this is a user defined signal.
     /// By default, the process is terminated by this signal.
+    /// 在 Unix 系统上,这是用户定义的信号.
+    /// 默认情况下,进程由此信号终止.
     pub const fn user_defined1() -> Self {
         Self(libc::SIGUSR1)
     }
@@ -190,6 +213,8 @@ impl SignalKind {
     ///
     /// On Unix systems this is a user defined signal.
     /// By default, the process is terminated by this signal.
+    /// 在 Unix 系统上,这是用户定义的信号.
+    /// 默认情况下,进程由此信号终止.
     pub const fn user_defined2() -> Self {
         Self(libc::SIGUSR2)
     }
@@ -198,6 +223,8 @@ impl SignalKind {
     ///
     /// On Unix systems this signal is sent when the terminal window is resized.
     /// By default, this signal is ignored.
+    /// 在 Unix 系统上,当终端窗口调整大小时会发送此信号.
+    /// 默认情况下,此信号被忽略.
     pub const fn window_change() -> Self {
         Self(libc::SIGWINCH)
     }
@@ -239,6 +266,8 @@ impl Default for SignalInfo {
 /// 2. Wake up the driver by writing a byte to a pipe
 ///
 /// Those two operations should both be async-signal safe.
+/// 1. 标记已收到我们的特定信号
+/// 2. 通过将字节写入管道来唤醒驱动程序
 fn action(globals: &'static Globals, signal: libc::c_int) {
     globals.record_event(signal as EventId);
 
@@ -255,6 +284,7 @@ fn action(globals: &'static Globals, signal: libc::c_int) {
 /// returning any error along the way if that fails.
 fn signal_enable(signal: SignalKind, handle: &Handle) -> io::Result<()> {
     let signal = signal.0;
+    // 信号值>0 并且不在禁止信号列表,的信号才能注册
     if signal < 0 || signal_hook_registry::FORBIDDEN.contains(&signal) {
         return Err(Error::new(
             ErrorKind::Other,
@@ -263,18 +293,22 @@ fn signal_enable(signal: SignalKind, handle: &Handle) -> io::Result<()> {
     }
 
     // Check that we have a signal driver running
+    // 检查信号驱动器是否运行
     handle.check_inner()?;
 
-    let globals = globals();
+    let globals = globals(); // 全局信号
     let siginfo = match globals.storage().get(signal as EventId) {
+        // 查找信号
         Some(slot) => slot,
-        None => return Err(io::Error::new(io::ErrorKind::Other, "signal too large")),
+        None => return Err(io::Error::new(io::ErrorKind::Other, "signal too large")), // 没有发现信号
     };
     let mut registered = Ok(());
+    // 注册信号回调
     siginfo.init.call_once(|| {
         registered = unsafe {
             signal_hook_registry::register(signal, move || action(globals, signal)).map(|_| ())
         };
+        // 信号初始化成功
         if registered.is_ok() {
             siginfo.initialized.store(true, Ordering::Relaxed);
         }
@@ -391,6 +425,7 @@ pub struct Signal {
 ///
 /// This function panics if there is no current reactor set, or if the `rt`
 /// feature flag is not enabled.
+/// 创建一个新的监听器,当当前进程接收到指定的信号`kind`时,它将接收通知.
 #[track_caller]
 pub fn signal(kind: SignalKind) -> io::Result<Signal> {
     let handle = scheduler::Handle::current();
@@ -406,6 +441,7 @@ pub(crate) fn signal_with_handle(
     handle: &Handle,
 ) -> io::Result<watch::Receiver<()>> {
     // Turn the signal delivery on once we are ready for it
+    // 一旦我们准备好,就开启信号传递
     signal_enable(kind, handle)?;
 
     Ok(globals().register_listener(kind.0 as EventId))
@@ -441,6 +477,7 @@ impl Signal {
     ///     }
     /// }
     /// ```
+    /// 接收信号
     pub async fn recv(&mut self) -> Option<()> {
         self.inner.recv().await
     }
@@ -491,6 +528,7 @@ pub(crate) trait InternalStream {
 }
 
 #[cfg(feature = "process")]
+// 信号流
 impl InternalStream for Signal {
     fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<()>> {
         self.poll_recv(cx)

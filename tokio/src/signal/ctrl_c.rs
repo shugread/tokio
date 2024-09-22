@@ -1,3 +1,4 @@
+/// 根据操作系统的不同, 选择不同的实现
 #[cfg(unix)]
 use super::unix::{self as os_impl};
 #[cfg(windows)]

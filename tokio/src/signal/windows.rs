@@ -61,6 +61,7 @@ pub fn ctrl_c() -> io::Result<CtrlC> {
 /// this event. Moreover, the notifications **are coalesced** if they aren't processed
 /// quickly enough. This means that if two notifications are received back-to-back,
 /// then the listener may only receive one item about the two notifications.
+/// 表示接收通过`SetConsoleCtrlHandler`发送到进程的`ctrl-c`通知的监听器.
 #[must_use = "listeners do nothing unless polled"]
 #[derive(Debug)]
 pub struct CtrlC {
@@ -90,6 +91,7 @@ impl CtrlC {
     ///     Ok(())
     /// }
     /// ```
+    /// 接收信号
     pub async fn recv(&mut self) -> Option<()> {
         self.inner.recv().await
     }
@@ -122,6 +124,7 @@ impl CtrlC {
     ///     }
     /// }
     /// ```
+    /// 轮询信号
     pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<()>> {
         self.inner.poll_recv(cx)
     }
@@ -138,6 +141,7 @@ impl CtrlC {
 /// this event. Moreover, the notifications **are coalesced** if they aren't processed
 /// quickly enough. This means that if two notifications are received back-to-back,
 /// then the listener may only receive one item about the two notifications.
+/// 表示通过 `SetConsoleCtrlHandler` 接收发送到进程的`ctrl-break`通知的监听器.
 #[must_use = "listeners do nothing unless polled"]
 #[derive(Debug)]
 pub struct CtrlBreak {
@@ -264,6 +268,7 @@ pub fn ctrl_close() -> io::Result<CtrlClose> {
 /// this event. Moreover, the notifications **are coalesced** if they aren't processed
 /// quickly enough. This means that if two notifications are received back-to-back,
 /// then the listener may only receive one item about the two notifications.
+/// 表示通过 `SetConsoleCtrlHandler` 接收发送到进程的`ctrl-close`通知的监听器.
 #[must_use = "listeners do nothing unless polled"]
 #[derive(Debug)]
 pub struct CtrlClose {
@@ -361,6 +366,7 @@ pub fn ctrl_shutdown() -> io::Result<CtrlShutdown> {
 /// this event. Moreover, the notifications **are coalesced** if they aren't processed
 /// quickly enough. This means that if two notifications are received back-to-back,
 /// then the listener may only receive one item about the two notifications.
+/// 表示通过 `SetConsoleCtrlHandler` 接收发送到进程的`ctrl-shutdown`通知的监听器.
 #[must_use = "listeners do nothing unless polled"]
 #[derive(Debug)]
 pub struct CtrlShutdown {
@@ -458,6 +464,7 @@ pub fn ctrl_logoff() -> io::Result<CtrlLogoff> {
 /// this event. Moreover, the notifications **are coalesced** if they aren't processed
 /// quickly enough. This means that if two notifications are received back-to-back,
 /// then the listener may only receive one item about the two notifications.
+/// 表示通过 `SetConsoleCtrlHandler` 接收发送到进程的`ctrl-logoff`通知的监听器.
 #[must_use = "listeners do nothing unless polled"]
 #[derive(Debug)]
 pub struct CtrlLogoff {

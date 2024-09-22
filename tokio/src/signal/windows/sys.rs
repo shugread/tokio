@@ -93,6 +93,7 @@ fn global_init() -> io::Result<()> {
     let mut init = None;
 
     INIT.call_once(|| unsafe {
+        // 初始化handler
         let rc = console::SetConsoleCtrlHandler(Some(handler), 1);
         let ret = if rc == 0 {
             Err(io::Error::last_os_error())
@@ -119,6 +120,8 @@ unsafe extern "system" fn handler(ty: u32) -> BOOL {
     } else {
         // No one is listening for this notification any more
         // let the OS fire the next (possibly the default) handler.
+        // 没有人再监听此通知
+        // 让操作系统触发下一个(可能是默认的)处理程序.
         0
     }
 }

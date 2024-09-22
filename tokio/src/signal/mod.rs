@@ -66,11 +66,13 @@ pub mod windows;
 mod reusable_box;
 use self::reusable_box::ReusableBoxFuture;
 
+// 接收信号的Future
 #[derive(Debug)]
 struct RxFuture {
     inner: ReusableBoxFuture<Receiver<()>>,
 }
 
+// 等待信号
 async fn make_future(mut rx: Receiver<()>) -> Receiver<()> {
     rx.changed().await.expect("signal sender went away");
     rx
@@ -83,6 +85,7 @@ impl RxFuture {
         }
     }
 
+    // 接收返回值
     async fn recv(&mut self) -> Option<()> {
         use crate::future::poll_fn;
         poll_fn(|cx| self.poll_recv(cx)).await
@@ -92,6 +95,7 @@ impl RxFuture {
         match self.inner.poll(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(rx) => {
+                // 更新内部Future
                 self.inner.set(make_future(rx));
                 Poll::Ready(Some(()))
             }

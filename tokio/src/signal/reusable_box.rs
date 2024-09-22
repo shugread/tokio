@@ -10,12 +10,14 @@ use std::{fmt, panic};
 ///
 /// This type lets you replace the future stored in the box without
 /// reallocating when the size and alignment permits this.
+/// 可重复使用的 `Pin<Box<dyn Future<Output = T> + Send>>`.
 pub(crate) struct ReusableBoxFuture<T> {
     boxed: NonNull<dyn Future<Output = T> + Send>,
 }
 
 impl<T> ReusableBoxFuture<T> {
     /// Create a new `ReusableBoxFuture<T>` containing the provided future.
+    /// 创建一个包含所提供Future的新 `ReusableBoxFuture<T>`.
     pub(crate) fn new<F>(future: F) -> Self
     where
         F: Future<Output = T> + Send + 'static,
@@ -34,10 +36,12 @@ impl<T> ReusableBoxFuture<T> {
     ///
     /// This reallocates if and only if the layout of the provided future is
     /// different from the layout of the currently stored future.
+    ///
     pub(crate) fn set<F>(&mut self, future: F)
     where
         F: Future<Output = T> + Send + 'static,
     {
+        // 当且仅当提供的Future的布局与当前存储的Future的布局不同时,才会重新分配.
         if let Err(future) = self.try_set(future) {
             *self = Self::new(future);
         }
@@ -60,6 +64,7 @@ impl<T> ReusableBoxFuture<T> {
 
         if Layout::new::<F>() == self_layout {
             // SAFETY: We just checked that the layout of F is correct.
+            // 可以直接修改Future
             unsafe {
                 self.set_same_layout(future);
             }
@@ -76,22 +81,26 @@ impl<T> ReusableBoxFuture<T> {
     ///
     /// This function requires that the layout of the provided future is the
     /// same as `self.layout`.
+    /// 设置当前Future
     unsafe fn set_same_layout<F>(&mut self, future: F)
     where
         F: Future<Output = T> + Send + 'static,
     {
         // Drop the existing future, catching any panics.
+        // drop原来的Future
         let result = panic::catch_unwind(AssertUnwindSafe(|| {
             ptr::drop_in_place(self.boxed.as_ptr());
         }));
 
         // Overwrite the future behind the pointer. This is safe because the
         // allocation was allocated with the same size and alignment as the type F.
+        // 写入新的Future
         let self_ptr: *mut F = self.boxed.as_ptr() as *mut F;
         ptr::write(self_ptr, future);
 
         // Update the vtable of self.boxed. The pointer is not null because we
         // just got it from self.boxed, which is not null.
+        // 更新 self.boxed 的 vtable
         self.boxed = NonNull::new_unchecked(self_ptr);
 
         // If the old future's destructor panicked, resume unwinding.
