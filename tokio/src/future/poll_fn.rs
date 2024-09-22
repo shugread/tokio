@@ -20,6 +20,7 @@ use std::task::{Context, Poll};
 // `tests/async_send_sync.rs`.
 
 /// Future for the [`poll_fn`] function.
+/// 将函数转换成Future
 pub struct PollFn<F> {
     f: F,
 }

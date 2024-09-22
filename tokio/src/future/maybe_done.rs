@@ -7,17 +7,21 @@ use std::task::{ready, Context, Poll};
 
 pin_project! {
     /// A future that may have completed.
+    /// 可能已经完成的Future.
     #[derive(Debug)]
     #[project = MaybeDoneProj]
     #[project_replace = MaybeDoneProjReplace]
     #[repr(C)] // https://github.com/rust-lang/miri/issues/3780
     pub enum MaybeDone<Fut: Future> {
         /// A not-yet-completed future.
+        /// 未完成的Future
         Future { #[pin] future: Fut },
         /// The output of the completed future.
+        /// 已经完成
         Done { output: Fut::Output },
         /// The empty variant after the result of a [`MaybeDone`] has been
         /// taken using the [`take_output`](MaybeDone::take_output) method.
+        /// 获取结果后的状态
         Gone,
     }
 }
@@ -34,6 +38,7 @@ impl<Fut: Future> MaybeDone<Fut> {
     /// The output of this method will be [`Some`] if and only if the inner
     /// future has been completed and [`take_output`](MaybeDone::take_output)
     /// has not yet been called.
+    /// 获取输出
     pub fn output_mut(self: Pin<&mut Self>) -> Option<&mut Fut::Output> {
         match self.project() {
             MaybeDoneProj::Done { output } => Some(output),
@@ -43,6 +48,7 @@ impl<Fut: Future> MaybeDone<Fut> {
 
     /// Attempts to take the output of a `MaybeDone` without driving it
     /// towards completion.
+    /// 取出输出
     #[inline]
     pub fn take_output(self: Pin<&mut Self>) -> Option<Fut::Output> {
         match *self {

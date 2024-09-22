@@ -5,6 +5,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+// 同时轮询三个Future
 pub(crate) fn try_join3<T1, F1, T2, F2, T3, F3, E>(
     future1: F1,
     future2: F2,
