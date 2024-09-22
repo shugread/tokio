@@ -38,6 +38,8 @@ impl Pidfd {
 
         // Safety: The following function calls invovkes syscall pidfd_open,
         // which takes two parameter: pidfd_open(fd: c_int, flag: c_int)
+        // 调用pidfd_open
+        // 将pid转换成fd
         let fd = unsafe { syscall(SYS_pidfd_open, pid, PIDFD_NONBLOCK) };
         if fd == -1 {
             let errno = io::Error::last_os_error().raw_os_error().unwrap();
@@ -62,6 +64,7 @@ impl AsRawFd for Pidfd {
     }
 }
 
+// 实现mio管理Pidfd
 impl Source for Pidfd {
     fn register(
         &mut self,
@@ -117,6 +120,7 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = Pin::into_inner(self);
 
+        // 可读
         match ready!(this.pidfd.poll_read_ready(cx)) {
             Err(err) if is_rt_shutdown_err(&err) => {
                 this.pidfd.reregister(Interest::READABLE)?;
@@ -124,6 +128,7 @@ where
             }
             res => res?,
         }
+        // pidfd已经可读
         Poll::Ready(Ok(this
             .inner
             .try_wait()?
@@ -160,6 +165,7 @@ where
 {
     pub(crate) fn new(inner: W, orphan_queue: Q) -> Result<Self, (Option<io::Error>, W)> {
         if let Some(pidfd) = Pidfd::open(inner.id()) {
+            // 注册pidfd
             match PollEvented::new_with_interest(pidfd, Interest::READABLE) {
                 Ok(pidfd) => Ok(Self {
                     inner: Some(PidfdReaperInner { pidfd, inner }),
@@ -177,6 +183,7 @@ where
     }
 }
 
+// 轮询等待pidfd可读
 impl<W, Q> Future for PidfdReaper<W, Q>
 where
     W: Wait + Unpin,
@@ -215,7 +222,7 @@ where
         if let Ok(Some(_)) = orphan.try_wait() {
             return;
         }
-
+        // 处理孤儿进程
         self.orphan_queue.push_orphan(orphan);
     }
 }

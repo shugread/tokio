@@ -41,6 +41,7 @@ use windows_sys::{
     },
 };
 
+// 子进程
 #[must_use = "futures do nothing unless polled"]
 pub(crate) struct Child {
     child: StdChild,
@@ -58,6 +59,7 @@ impl fmt::Debug for Child {
 }
 
 struct Waiting {
+    // 用于在子进程结束时通知
     rx: oneshot::Receiver<()>,
     wait_object: HANDLE,
     tx: *mut Option<oneshot::Sender<()>>,
@@ -106,10 +108,11 @@ impl Future for Child {
         let inner = Pin::get_mut(self);
         loop {
             if let Some(ref mut w) = inner.waiting {
+                // 等待子进程结束
                 match Pin::new(&mut w.rx).poll(cx) {
                     Poll::Ready(Ok(())) => {}
                     Poll::Ready(Err(_)) => panic!("should not be canceled"),
-                    Poll::Pending => return Poll::Pending,
+                    Poll::Pending => return Poll::Pending, // 挂起任务
                 }
                 let status = inner.try_wait()?.expect("not ready yet");
                 return Poll::Ready(Ok(status));
@@ -121,6 +124,7 @@ impl Future for Child {
             let (tx, rx) = oneshot::channel();
             let ptr = Box::into_raw(Box::new(Some(tx)));
             let mut wait_object = 0;
+            // 注册回调
             let rc = unsafe {
                 RegisterWaitForSingleObject(
                     &mut wait_object,
@@ -154,6 +158,7 @@ impl AsRawHandle for Child {
 impl Drop for Waiting {
     fn drop(&mut self) {
         unsafe {
+            // 取消注册的回调
             let rc = UnregisterWaitEx(self.wait_object, INVALID_HANDLE_VALUE);
             if rc == 0 {
                 panic!("failed to unregister: {}", io::Error::last_os_error());
@@ -164,6 +169,7 @@ impl Drop for Waiting {
 }
 
 unsafe extern "system" fn callback(ptr: *mut std::ffi::c_void, _timer_fired: BOOLEAN) {
+    // 发送进子程结束通知
     let complete = &mut *(ptr as *mut Option<oneshot::Sender<()>>);
     let _ = complete.take().unwrap().send(());
 }
@@ -192,6 +198,7 @@ pub(crate) struct ChildStdio {
     // Used for accessing the raw handle, even if the io version is busy
     raw: Arc<StdFile>,
     // For doing I/O operations asynchronously
+    // 用于异步执行 I/O 操作
     io: Blocking<ArcFile>,
 }
 
@@ -257,13 +264,16 @@ pub(crate) fn convert_to_stdio(child_stdio: ChildStdio) -> io::Result<Stdio> {
     convert_to_file(child_stdio).map(Stdio::from)
 }
 
+// 复制一个 Windows 句柄,并返回一个新的 StdFile 结构
 fn duplicate_handle<T: AsRawHandle>(io: &T) -> io::Result<StdFile> {
     use std::os::windows::prelude::FromRawHandle;
 
     unsafe {
         let mut dup_handle = INVALID_HANDLE_VALUE;
+        //  获取当前进程的句柄
         let cur_proc = GetCurrentProcess();
 
+        // 复制句柄
         let status = DuplicateHandle(
             cur_proc,
             io.as_raw_handle() as _,

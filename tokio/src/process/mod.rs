@@ -270,9 +270,11 @@ cfg_windows! {
 ///
 /// [`std::process::Command`]: std::process::Command
 /// [`Child`]: struct@Child
+/// 支持异步操作的命令
 #[derive(Debug)]
 pub struct Command {
     std: StdCommand,
+    // 定义Child在drop时是否终止
     kill_on_drop: bool,
 }
 
@@ -850,6 +852,7 @@ impl Command {
     /// On Unix platforms this method will fail with `std::io::ErrorKind::WouldBlock`
     /// if the system process limit is reached (which includes other applications
     /// running on the system).
+    /// 开始运行
     pub fn spawn(&mut self) -> io::Result<Child> {
         imp::spawn_child(&mut self.std).map(|spawned_child| Child {
             child: FusedChild::Child(ChildDropGuard {
@@ -983,6 +986,7 @@ impl From<StdCommand> for Command {
 }
 
 /// A drop guard which can ensure the child process is killed on drop if specified.
+/// drop守卫
 #[derive(Debug)]
 struct ChildDropGuard<T: Kill> {
     inner: T,
@@ -1003,6 +1007,7 @@ impl<T: Kill> Kill for ChildDropGuard<T> {
 
 impl<T: Kill> Drop for ChildDropGuard<T> {
     fn drop(&mut self) {
+        // 关闭进程
         if self.kill_on_drop {
             drop(self.kill());
         }
@@ -1024,6 +1029,7 @@ where
 
         if let Poll::Ready(Ok(_)) = ret {
             // Avoid the overhead of trying to kill a reaped process
+            // 避免尝试终止已收获进程的开销
             self.kill_on_drop = false;
         }
 
@@ -1037,6 +1043,7 @@ where
 
 /// Keeps track of the exit status of a child process without worrying about
 /// polling the underlying futures even after they have completed.
+/// 跟踪子进程的退出状态,而不必担心在子进程完成后轮询底层未来.
 #[derive(Debug)]
 enum FusedChild {
     Child(ChildDropGuard<imp::Child>),
@@ -1053,6 +1060,7 @@ enum FusedChild {
 /// The `Command::kill_on_drop` method can be used to modify this behavior
 /// and kill the child process if the `Child` wrapper is dropped before it
 /// has exited.
+/// 表示在事件循环中产生的子进程.
 #[derive(Debug)]
 pub struct Child {
     child: FusedChild,
@@ -1125,6 +1133,7 @@ impl Child {
     /// that on Unix platforms it is possible for a zombie process to remain
     /// after a kill is sent; to avoid this, the caller should ensure that either
     /// `child.wait().await` or `child.try_wait()` is invoked successfully.
+    /// 尝试强制子进程退出,但不等待请求生效.
     pub fn start_kill(&mut self) -> io::Result<()> {
         match &mut self.child {
             FusedChild::Child(child) => child.kill(),
@@ -1160,6 +1169,7 @@ impl Child {
     ///     }
     /// }
     /// ```
+    /// 等待进程结束
     pub async fn kill(&mut self) -> io::Result<()> {
         self.start_kill()?;
         self.wait().await?;
@@ -1212,6 +1222,7 @@ impl Child {
     ///     let _ = child.wait().await;
     /// }
     /// ```
+    /// 等待进程结束
     pub async fn wait(&mut self) -> io::Result<ExitStatus> {
         // Ensure stdin is closed so the child isn't stuck waiting on
         // input while the parent is waiting for it to exit.
@@ -1246,6 +1257,7 @@ impl Child {
     ///
     /// Note that unlike `wait`, this function will not attempt to drop stdin,
     /// nor will it wake the current task if the child exits.
+    /// 如果子进程已经退出,则尝试收集子进程的退出状态.
     pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
         match &mut self.child {
             FusedChild::Done(exit) => Ok(Some(*exit)),
@@ -1282,6 +1294,7 @@ impl Child {
     pub async fn wait_with_output(mut self) -> io::Result<Output> {
         use crate::future::try_join3;
 
+        // 读取所有数据
         async fn read_to_end<A: AsyncRead + Unpin>(io: &mut Option<A>) -> io::Result<Vec<u8>> {
             let mut vec = Vec::new();
             if let Some(io) = io.as_mut() {
@@ -1290,12 +1303,15 @@ impl Child {
             Ok(vec)
         }
 
+        // 读取标准输出
         let mut stdout_pipe = self.stdout.take();
+        // 读取错误输出
         let mut stderr_pipe = self.stderr.take();
 
         let stdout_fut = read_to_end(&mut stdout_pipe);
         let stderr_fut = read_to_end(&mut stderr_pipe);
 
+        // 同时轮询3个Future
         let (status, stdout, stderr) = try_join3(self.wait(), stdout_fut, stderr_fut).await?;
 
         // Drop happens after `try_join` due to <https://github.com/tokio-rs/tokio/issues/4309>
@@ -1314,6 +1330,7 @@ impl Child {
 ///
 /// This type implements the `AsyncWrite` trait to pass data to the stdin handle of
 /// handle of a child process asynchronously.
+/// 支持异步的标准输入
 #[derive(Debug)]
 pub struct ChildStdin {
     inner: imp::ChildStdio,
@@ -1323,6 +1340,7 @@ pub struct ChildStdin {
 ///
 /// This type implements the `AsyncRead` trait to read data from the stdout
 /// handle of a child process asynchronously.
+/// 支持异步的标准输出
 #[derive(Debug)]
 pub struct ChildStdout {
     inner: imp::ChildStdio,
@@ -1332,6 +1350,7 @@ pub struct ChildStdout {
 ///
 /// This type implements the `AsyncRead` trait to read data from the stderr
 /// handle of a child process asynchronously.
+/// 支持异步的错误输出
 #[derive(Debug)]
 pub struct ChildStderr {
     inner: imp::ChildStdio,
@@ -1382,23 +1401,28 @@ impl ChildStderr {
     }
 }
 
+// 标准输入的异步实现
 impl AsyncWrite for ChildStdin {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
+        // 异步写入数据到缓冲区,返回已经写入的字节数.
         Pin::new(&mut self.inner).poll_write(cx, buf)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        // 确保所有数据已经写入底层流
         Pin::new(&mut self.inner).poll_flush(cx)
     }
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        // 关闭写入流
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 
+    // 写入到slot中
     fn poll_write_vectored(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -1407,11 +1431,13 @@ impl AsyncWrite for ChildStdin {
         Pin::new(&mut self.inner).poll_write_vectored(cx, bufs)
     }
 
+    // 判断是否支持`poll_write_vectored`
     fn is_write_vectored(&self) -> bool {
         self.inner.is_write_vectored()
     }
 }
 
+// 标准输出的异步实现
 impl AsyncRead for ChildStdout {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -1422,6 +1448,7 @@ impl AsyncRead for ChildStdout {
     }
 }
 
+// 错误输出的异步实现
 impl AsyncRead for ChildStderr {
     fn poll_read(
         mut self: Pin<&mut Self>,

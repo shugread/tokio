@@ -12,6 +12,7 @@ use std::task::Poll;
 
 /// Orchestrates between registering interest for receiving signals when a
 /// child process has exited, and attempting to poll for process completion.
+/// 在注册对在子进程退出时接收信号的兴趣与尝试轮询进程完成之间进行协调.
 #[derive(Debug)]
 pub(crate) struct Reaper<W, Q, S>
 where
@@ -84,6 +85,7 @@ where
             // this future's task will be notified/woken up again. Since the
             // futures model allows for spurious wake ups this extra wakeup
             // should not cause significant issues with parent futures.
+            // 每次收到信号, 检查子进程状态
             let registered_interest = self.signal.poll_recv(cx).is_pending();
 
             if let Some(status) = self.inner_mut().try_wait()? {
@@ -98,6 +100,7 @@ where
                 // Otherwise, if the signal stream delivered a signal to us, we
                 // won't get notified at the next signal, so we'll loop and try
                 // again.
+                // 信号指示有变化
                 continue;
             }
         }

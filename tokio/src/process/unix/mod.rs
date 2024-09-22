@@ -1,4 +1,5 @@
 //! Unix handling of child processes.
+//! Unix 处理子进程.
 //!
 //! Right now the only "fancy" thing about this is how we implement the
 //! `Future` implementation on `Child` to get the exit status. Unix offers
@@ -48,6 +49,7 @@ use std::process::{Child as StdChild, ExitStatus, Stdio};
 use std::task::Context;
 use std::task::Poll;
 
+// 实现标准库中子进程的等待退出
 impl Wait for StdChild {
     fn id(&self) -> u32 {
         self.id()
@@ -58,6 +60,7 @@ impl Wait for StdChild {
     }
 }
 
+// 关闭子进程
 impl Kill for StdChild {
     fn kill(&mut self) -> io::Result<()> {
         self.kill()
@@ -91,17 +94,20 @@ impl fmt::Debug for GlobalOrphanQueue {
 }
 
 impl GlobalOrphanQueue {
+    // 处理孤儿进程
     pub(crate) fn reap_orphans(handle: &SignalHandle) {
         get_orphan_queue().reap_orphans(handle);
     }
 }
 
 impl OrphanQueue<StdChild> for GlobalOrphanQueue {
+    // 添加孤儿进程
     fn push_orphan(&self, orphan: StdChild) {
         get_orphan_queue().push_orphan(orphan);
     }
 }
 
+// 子进程
 #[must_use = "futures do nothing unless polled"]
 pub(crate) enum Child {
     SignalReaper(Reaper<StdChild, GlobalOrphanQueue, Signal>),
@@ -115,6 +121,7 @@ impl fmt::Debug for Child {
     }
 }
 
+// 开启子进程
 pub(crate) fn spawn_child(cmd: &mut std::process::Command) -> io::Result<SpawnedChild> {
     let mut child = cmd.spawn()?;
     let stdin = child.stdin.take().map(stdio).transpose()?;
@@ -135,6 +142,7 @@ pub(crate) fn spawn_child(cmd: &mut std::process::Command) -> io::Result<Spawned
         Err((None, child_returned)) => child = child_returned,
     }
 
+    // 注册信号
     let signal = signal(SignalKind::child())?;
 
     Ok(SpawnedChild {
@@ -178,9 +186,9 @@ impl Future for Child {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match Pin::into_inner(self) {
-            Self::SignalReaper(signal_reaper) => Pin::new(signal_reaper).poll(cx),
+            Self::SignalReaper(signal_reaper) => Pin::new(signal_reaper).poll(cx), // 通过Reaper异步获取子进程状态
             #[cfg(all(target_os = "linux", feature = "rt"))]
-            Self::PidfdReaper(pidfd_reaper) => Pin::new(pidfd_reaper).poll(cx),
+            Self::PidfdReaper(pidfd_reaper) => Pin::new(pidfd_reaper).poll(cx), // 轮询PidfdReaper
         }
     }
 }
@@ -189,6 +197,7 @@ impl Future for Child {
 pub(crate) struct Pipe {
     // Actually a pipe is not a File. However, we are reusing `File` to get
     // close on drop. This is a similar trick as `mio`.
+    // 实际上管道不是文件.但是,我们重用`file`来关闭文件
     fd: File,
 }
 
@@ -231,6 +240,7 @@ impl AsFd for Pipe {
     }
 }
 
+// 设置文件阻塞
 fn convert_to_blocking_file(io: ChildStdio) -> io::Result<File> {
     let mut fd = io.inner.into_inner()?.fd;
 
@@ -243,10 +253,12 @@ fn convert_to_blocking_file(io: ChildStdio) -> io::Result<File> {
     Ok(fd)
 }
 
+// ChildStdio转换成Stdio
 pub(crate) fn convert_to_stdio(io: ChildStdio) -> io::Result<Stdio> {
     convert_to_blocking_file(io).map(Stdio::from)
 }
 
+// Pipe实现Source, 用于mio管理
 impl Source for Pipe {
     fn register(
         &mut self,
@@ -271,6 +283,7 @@ impl Source for Pipe {
     }
 }
 
+// 子进程标准输入输出
 pub(crate) struct ChildStdio {
     inner: PollEvented<Pipe>,
 }
@@ -299,6 +312,7 @@ impl AsFd for ChildStdio {
     }
 }
 
+// 实现异步写入
 impl AsyncWrite for ChildStdio {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -329,6 +343,7 @@ impl AsyncWrite for ChildStdio {
     }
 }
 
+// 实现异步读取
 impl AsyncRead for ChildStdio {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -340,20 +355,24 @@ impl AsyncRead for ChildStdio {
     }
 }
 
+// 设置阻塞状态
 fn set_nonblocking<T: AsRawFd>(fd: &mut T, nonblocking: bool) -> io::Result<()> {
     unsafe {
         let fd = fd.as_raw_fd();
+        // 获取flag
         let previous = libc::fcntl(fd, libc::F_GETFL);
         if previous == -1 {
             return Err(io::Error::last_os_error());
         }
 
+        // 修改阻塞位
         let new = if nonblocking {
             previous | libc::O_NONBLOCK
         } else {
             previous & !libc::O_NONBLOCK
         };
 
+        // 写入阻塞状态
         let r = libc::fcntl(fd, libc::F_SETFL, new);
         if r == -1 {
             return Err(io::Error::last_os_error());
@@ -363,13 +382,16 @@ fn set_nonblocking<T: AsRawFd>(fd: &mut T, nonblocking: bool) -> io::Result<()> 
     Ok(())
 }
 
+// 转换成ChildStdio
 pub(super) fn stdio<T>(io: T) -> io::Result<ChildStdio>
 where
     T: IntoRawFd,
 {
     // Set the fd to nonblocking before we pass it to the event loop
     let mut pipe = Pipe::from(io);
+    // 设置非阻塞
     set_nonblocking(&mut pipe, true)?;
 
+    // 注册
     PollEvented::new(pipe).map(|inner| ChildStdio { inner })
 }

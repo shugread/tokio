@@ -6,11 +6,14 @@ use std::io;
 use std::process::ExitStatus;
 
 /// An interface for waiting on a process to exit.
+/// 等待进程退出的接口.
 pub(crate) trait Wait {
     /// Get the identifier for this process or diagnostics.
+    /// 获取标识符.
     #[allow(dead_code)]
     fn id(&self) -> u32;
     /// Try waiting for a process to exit in a non-blocking manner.
+    /// 尝试以非阻塞方式等待进程退出.
     fn try_wait(&mut self) -> io::Result<Option<ExitStatus>>;
 }
 
@@ -25,8 +28,10 @@ impl<T: Wait> Wait for &mut T {
 }
 
 /// An interface for queueing up an orphaned process so that it can be reaped.
+/// 用于将孤儿进程排队以便可以处理的接口.
 pub(crate) trait OrphanQueue<T> {
     /// Adds an orphan to the queue.
+    /// 将孤儿对象加入队列
     fn push_orphan(&self, orphan: T);
 }
 
@@ -37,6 +42,7 @@ impl<T, O: OrphanQueue<T>> OrphanQueue<T> for &O {
 }
 
 /// An implementation of `OrphanQueue`.
+/// `OrphanQueue` 的实现.
 #[derive(Debug)]
 pub(crate) struct OrphanQueueImpl<T> {
     sigchild: Mutex<Option<watch::Receiver<()>>>,
@@ -76,15 +82,18 @@ impl<T> OrphanQueueImpl<T> {
 
     /// Attempts to reap every process in the queue, ignoring any errors and
     /// enqueueing any orphans which have not yet exited.
+    /// 尝试收获队列中的每个进程,忽略任何错误并将任何尚未退出的孤立进程入队.
     pub(crate) fn reap_orphans(&self, handle: &SignalHandle)
     where
         T: Wait,
     {
         // If someone else is holding the lock, they will be responsible for draining
         // the queue as necessary, so we can safely bail if that happens
+        // 如果其他人持有锁,他们将负责在必要时清空队列,因此如果发生这种情况,我们可以安全地退出
         if let Some(mut sigchild_guard) = self.sigchild.try_lock() {
             match &mut *sigchild_guard {
                 Some(sigchild) => {
+                    // 状态改变
                     if sigchild.try_has_changed().and_then(Result::ok).is_some() {
                         drain_orphan_queue(self.queue.lock());
                     }
@@ -94,13 +103,16 @@ impl<T> OrphanQueueImpl<T> {
 
                     // Be lazy and only initialize the SIGCHLD listener if there
                     // are any orphaned processes in the queue.
+                    // 仅当队列中有孤立进程时才初始化 SIGCHLD 监听器.
                     if !queue.is_empty() {
                         // An errors shouldn't really happen here, but if it does it
                         // means that the signal driver isn't running, in
                         // which case there isn't anything we can
                         // register/initialize here, so we can try again later
+                        // 监听子进程状态变化
                         if let Ok(sigchild) = signal_with_handle(SignalKind::child(), handle) {
                             *sigchild_guard = Some(sigchild);
+                            // 处理子进程
                             drain_orphan_queue(queue);
                         }
                     }
@@ -121,6 +133,8 @@ where
                 // The stdlib handles interruption errors (EINTR) when polling a child process.
                 // All other errors represent invalid inputs or pids that have already been
                 // reaped, so we can drop the orphan in case an error is raised.
+                // stdlib 在轮询子进程时处理中断错误 (EINTR).
+                // 所有其他错误都表示无效输入或已获取的 pid,因此我们可以在出现错误时删除孤儿进程.
                 queue.swap_remove(i);
             }
         }
