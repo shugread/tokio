@@ -9,6 +9,7 @@ use std::task::{Context, Poll};
 
 pin_project! {
     /// A future to write some of the buffer to an `AsyncWrite`.
+    /// Future中把缓冲区数据写入
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct Write<'a, W: ?Sized> {

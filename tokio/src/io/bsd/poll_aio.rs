@@ -1,4 +1,5 @@
 //! Use POSIX AIO futures with Tokio.
+//! 将 POSIX AIO Future与 Tokio 结合使用.
 
 use crate::io::interest::Interest;
 use crate::runtime::io::{ReadyEvent, Registration};
@@ -17,16 +18,20 @@ use std::task::{ready, Context, Poll};
 ///
 /// Tokio's consumer must pass an implementor of this trait to create a
 /// [`Aio`] object.
+/// 注册和注销 AIO 事件源的方法
 pub trait AioSource {
     /// Registers this AIO event source with Tokio's reactor.
+    /// 注册AIO事件到Tokio
     fn register(&mut self, kq: RawFd, token: usize);
 
     /// Deregisters this AIO event source with Tokio's reactor.
+    /// 从Tokio注销AIO事件
     fn deregister(&mut self);
 }
 
 /// Wraps the user's AioSource in order to implement mio::event::Source, which
 /// is what the rest of the crate wants.
+/// 包裹了用户的 AioSource,并实现了 mio::event::Source trait,以便于注册和注销 AIO 事件源.
 struct MioSource<T>(T);
 
 impl<T: AioSource> Source for MioSource<T> {
@@ -87,6 +92,7 @@ impl<T: AioSource> Source for MioSource<T> {
 //
 // Note that Aio doesn't implement Drop.  There's no need.  Unlike other
 // kqueue sources, simply dropping the object effectively deregisters it.
+// 将 AIO 源与 Tokio 反应器关联
 pub struct Aio<E> {
     io: MioSource<E>,
     registration: Registration,
@@ -117,6 +123,7 @@ impl<E: AioSource> Aio<E> {
         Self::new_with_interest(io, Interest::LIO)
     }
 
+    // 注册IO事件
     fn new_with_interest(io: E, interest: Interest) -> io::Result<Self> {
         let mut io = MioSource(io);
         let handle = scheduler::Handle::current();
@@ -141,6 +148,7 @@ impl<E: AioSource> Aio<E> {
     /// call `clear_ready` before resubmitting it.
     ///
     /// [`lio_listio`]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/lio_listio.html
+    /// 清除就绪状态
     pub fn clear_ready(&self, ev: AioEvent) {
         self.registration.clear_readiness(ev.0)
     }
@@ -164,6 +172,7 @@ impl<E: AioSource> Aio<E> {
     /// is scheduled to receive a wakeup when the underlying operation
     /// completes. Note that on multiple calls to `poll_ready`, only the `Waker` from the
     /// `Context` passed to the most recent call is scheduled to receive a wakeup.
+    /// 轮询IO
     pub fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<io::Result<AioEvent>> {
         let ev = ready!(self.registration.poll_read_ready(cx))?;
         Poll::Ready(Ok(AioEvent(ev)))

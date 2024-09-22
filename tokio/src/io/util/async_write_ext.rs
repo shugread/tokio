@@ -66,6 +66,7 @@ cfg_io_util! {
     /// See [module][crate::io] documentation for more details.
     ///
     /// [`AsyncWrite`]: AsyncWrite
+    /// 拓展[`AsyncWrite`]
     pub trait AsyncWriteExt: AsyncWrite {
         /// Writes a buffer into this writer, returning how many bytes were
         /// written.
@@ -121,6 +122,7 @@ cfg_io_util! {
         ///     Ok(())
         /// }
         /// ```
+        /// 将缓冲区写入器,返回已写入的字节数.
         fn write<'a>(&'a mut self, src: &'a [u8]) -> Write<'a, Self>
         where
             Self: Unpin,
@@ -170,6 +172,7 @@ cfg_io_util! {
         /// ```
         ///
         /// [`write`]: AsyncWriteExt::write
+        /// 与 [`write`] 类似,不同之处在于它从一组缓冲区中写入.
         fn write_vectored<'a, 'b>(&'a mut self, bufs: &'a [IoSlice<'b>]) -> WriteVectored<'a, 'b, Self>
         where
             Self: Unpin,
@@ -251,6 +254,7 @@ cfg_io_util! {
         ///     Ok(())
         /// }
         /// ```
+        /// 将缓冲区写入,前进缓冲区的内部光标.
         fn write_buf<'a, B>(&'a mut self, src: &'a mut B) -> WriteBuf<'a, Self, B>
         where
             Self: Sized + Unpin,
@@ -316,6 +320,7 @@ cfg_io_util! {
         /// ```
         ///
         /// [`write`]: AsyncWriteExt::write
+        ///  尝试将整个缓冲区写入.
         fn write_all_buf<'a, B>(&'a mut self, src: &'a mut B) -> WriteAllBuf<'a, Self, B>
         where
             Self: Sized + Unpin,
@@ -366,6 +371,7 @@ cfg_io_util! {
         /// ```
         ///
         /// [`write`]: AsyncWriteExt::write
+        ///  尝试将整个缓冲区写入.
         fn write_all<'a>(&'a mut self, src: &'a [u8]) -> WriteAll<'a, Self>
         where
             Self: Unpin,
@@ -1247,6 +1253,7 @@ cfg_io_util! {
         ///     Ok(())
         /// }
         /// ```
+        /// 刷新流
         fn flush(&mut self) -> Flush<'_, Self>
         where
             Self: Unpin,
@@ -1286,6 +1293,7 @@ cfg_io_util! {
         ///     Ok(())
         /// }
         /// ```
+        /// 关闭流
         fn shutdown(&mut self) -> Shutdown<'_, Self>
         where
             Self: Unpin,

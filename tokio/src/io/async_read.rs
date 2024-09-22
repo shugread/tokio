@@ -5,6 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Reads bytes from a source.
+/// 从源读取字节.
 ///
 /// This trait is analogous to the [`std::io::Read`] trait, but integrates with
 /// the asynchronous task system. In particular, the [`poll_read`] method,
@@ -51,6 +52,14 @@ pub trait AsyncRead {
     /// If no data is available for reading, the method returns `Poll::Pending`
     /// and arranges for the current task (via `cx.waker()`) to receive a
     /// notification when the object becomes readable or is closed.
+    /// 返回值
+    /// * `Poll::Ready(Ok(()))` 表示数据被立即读取并放入输出缓冲区.
+    ///   读取的数据量可以通过 `ReadBuf::filled` 返回的切片长度的增加来确定.
+    ///   如果差值为 0,则表示已达到 EOF,或者输出缓冲区的容量为零（即 `buf.remaining()` == 0）.
+    /// * `Poll::Pending` 表示没有数据被读入提供的缓冲区.I/O 对象当前不可读,但将来可能会变得可读.
+    ///   最重要的是,**当前 Future 的任务计划在对象可读时取消暂停**.
+    ///   这意味着,与 `Future::poll` 一样，当 I/O 对象再次可读时，您将收到通知.
+    /// * 其他错误的 `Poll::Ready(Err(e))` 是来自底层对象的标准 I/O 错误.
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -92,6 +101,7 @@ where
     }
 }
 
+// &[u8]实现AsyncRead
 impl AsyncRead for &[u8] {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -106,6 +116,7 @@ impl AsyncRead for &[u8] {
     }
 }
 
+// io::Cursor实现AsyncRead
 impl<T: AsRef<[u8]> + Unpin> AsyncRead for io::Cursor<T> {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -116,15 +127,18 @@ impl<T: AsRef<[u8]> + Unpin> AsyncRead for io::Cursor<T> {
         let slice: &[u8] = (*self).get_ref().as_ref();
 
         // The position could technically be out of bounds, so don't panic...
+        // 从技术上来说,该位置可能超出界限,所以不要panic
         if pos > slice.len() as u64 {
             return Poll::Ready(Ok(()));
         }
 
         let start = pos as usize;
+        // 读取的长度
         let amt = std::cmp::min(slice.len() - start, buf.remaining());
         // Add won't overflow because of pos check above.
         let end = start + amt;
         buf.put_slice(&slice[start..end]);
+        // 更新postion
         self.set_position(end as u64);
 
         Poll::Ready(Ok(()))

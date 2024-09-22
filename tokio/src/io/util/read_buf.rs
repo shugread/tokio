@@ -22,6 +22,7 @@ where
 
 pin_project! {
     /// Future returned by [`read_buf`](crate::io::AsyncReadExt::read_buf).
+    /// 用于 [`read_buf`](super::AsyncReadExt::read_buf) 方法的流.
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct ReadBuf<'a, R: ?Sized, B: ?Sized> {
@@ -46,6 +47,7 @@ where
         let me = self.project();
 
         if !me.buf.has_remaining_mut() {
+            // buf已满
             return Poll::Ready(Ok(0));
         }
 
@@ -54,6 +56,7 @@ where
             let dst = unsafe { &mut *(dst as *mut _ as *mut [MaybeUninit<u8>]) };
             let mut buf = ReadBuf::uninit(dst);
             let ptr = buf.filled().as_ptr();
+            // 读取数据
             ready!(Pin::new(me.reader).poll_read(cx, &mut buf)?);
 
             // Ensure the pointer does not change from under us

@@ -42,6 +42,7 @@ impl<R: AsyncRead> BufReader<R> {
     }
 
     /// Creates a new `BufReader` with the specified buffer capacity.
+    /// 创建缓存读取对象
     pub fn with_capacity(capacity: usize, inner: R) -> Self {
         let buffer = vec![0; capacity];
         Self {
@@ -84,11 +85,13 @@ impl<R: AsyncRead> BufReader<R> {
     /// Returns a reference to the internally buffered data.
     ///
     /// Unlike `fill_buf`, this will not attempt to fill the buffer if it is empty.
+    /// 返回对内部缓冲数据的引用.
     pub fn buffer(&self) -> &[u8] {
         &self.buf[self.pos..self.cap]
     }
 
     /// Invalidates all data in the internal buffer.
+    /// 无效所有数据
     #[inline]
     fn discard_buffer(self: Pin<&mut Self>) {
         let me = self.project();
@@ -106,12 +109,15 @@ impl<R: AsyncRead> AsyncRead for BufReader<R> {
         // If we don't have any buffered data and we're doing a massive read
         // (larger than our internal buffer), bypass our internal buffer
         // entirely.
+        // 如果我们没有任何缓冲数据,并且正在进行大量读取
+        // (大于我们的内部缓冲区),则完全绕过内部缓冲区
         if self.pos == self.cap && buf.remaining() >= self.buf.len() {
             let res = ready!(self.as_mut().get_pin_mut().poll_read(cx, buf));
             self.discard_buffer();
             return Poll::Ready(res);
         }
         let rem = ready!(self.as_mut().poll_fill_buf(cx))?;
+        // 写入数据
         let amt = std::cmp::min(rem.len(), buf.remaining());
         buf.put_slice(&rem[..amt]);
         self.consume(amt);
@@ -127,11 +133,15 @@ impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
         // some more data from the underlying reader.
         // Branch using `>=` instead of the more correct `==`
         // to tell the compiler that the pos..cap slice is always valid.
+        // 如果已经到达内部缓冲区的末尾,那么需要从底层读取器获取更多数据
         if *me.pos >= *me.cap {
             debug_assert!(*me.pos == *me.cap);
+            // 读取数据
             let mut buf = ReadBuf::new(me.buf);
             ready!(me.inner.poll_read(cx, &mut buf))?;
+            // 修改容量
             *me.cap = buf.filled().len();
+            // pos从头开始
             *me.pos = 0;
         }
         Poll::Ready(Ok(&me.buf[*me.pos..*me.cap]))
@@ -146,12 +156,16 @@ impl<R: AsyncRead> AsyncBufRead for BufReader<R> {
 #[derive(Debug, Clone, Copy)]
 pub(super) enum SeekState {
     /// `start_seek` has not been called.
+    /// `start_seek` 尚未被调用.
     Init,
     /// `start_seek` has been called, but `poll_complete` has not yet been called.
+    /// `start_seek` 已被调用，但 `poll_complete` 尚未被调用.
     Start(SeekFrom),
     /// Waiting for completion of the first `poll_complete` in the `n.checked_sub(remainder).is_none()` branch.
+    /// 等待`n.checked_sub(remainder).is_none()`分支中第一个`poll_complete`的完成.
     PendingOverflowed(i64),
     /// Waiting for completion of `poll_complete`.
+    /// 等待`poll_complete`完成.
     Pending,
 }
 
@@ -173,6 +187,7 @@ pub(super) enum SeekState {
 /// seeks will be performed instead of one. If the second seek returns
 /// `Err`, the underlying reader will be left at the same position it would
 /// have if you called `seek` with `SeekFrom::Current(0)`.
+/// 在底层读取器中寻找偏移量(以字节为单位).
 impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
     fn start_seek(self: Pin<&mut Self>, pos: SeekFrom) -> io::Result<()> {
         // We needs to call seek operation multiple times.
@@ -180,6 +195,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
         // as start_seek alone cannot guarantee that the operation will be completed.
         // poll_complete receives a Context and returns a Poll, so it cannot be called
         // inside start_seek.
+        // 设置seek
         *self.project().seek_state = SeekState::Start(pos);
         Ok(())
     }
@@ -194,6 +210,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
                 return Poll::Ready(Ok(0));
             }
             SeekState::Start(SeekFrom::Current(n)) => {
+                // 剩余缓冲区大小
                 let remainder = (self.cap - self.pos) as i64;
                 // it should be safe to assume that remainder fits within an i64 as the alternative
                 // means we managed to allocate 8 exbibytes and that's absurd.
@@ -201,20 +218,24 @@ impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
                 // support seeking by i64::MIN so we need to handle underflow when subtracting
                 // remainder.
                 if let Some(offset) = n.checked_sub(remainder) {
+                    //  不会导致下溢,则进行一次寻址
                     self.as_mut()
                         .get_pin_mut()
                         .start_seek(SeekFrom::Current(offset))?;
                 } else {
                     // seek backwards by our remainder, and then by the offset
+                    // 先将位置回退到缓冲区的起始位置
                     self.as_mut()
                         .get_pin_mut()
                         .start_seek(SeekFrom::Current(-remainder))?;
                     if self.as_mut().get_pin_mut().poll_complete(cx)?.is_pending() {
+                        // 根据 n 进行寻址.
                         *self.as_mut().project().seek_state = SeekState::PendingOverflowed(n);
                         return Poll::Pending;
                     }
 
                     // https://github.com/rust-lang/rust/pull/61157#issuecomment-495932676
+                    // 清空内部缓冲区
                     self.as_mut().discard_buffer();
 
                     self.as_mut()
@@ -224,6 +245,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
                 self.as_mut().get_pin_mut().poll_complete(cx)?
             }
             SeekState::PendingOverflowed(n) => {
+                // 等待上一个寻址完成后,再进行新的寻址操作
                 if self.as_mut().get_pin_mut().poll_complete(cx)?.is_pending() {
                     *self.as_mut().project().seek_state = SeekState::PendingOverflowed(n);
                     return Poll::Pending;
@@ -232,12 +254,14 @@ impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
                 // https://github.com/rust-lang/rust/pull/61157#issuecomment-495932676
                 self.as_mut().discard_buffer();
 
+                // 下一次寻址
                 self.as_mut()
                     .get_pin_mut()
                     .start_seek(SeekFrom::Current(n))?;
                 self.as_mut().get_pin_mut().poll_complete(cx)?
             }
             SeekState::Start(pos) => {
+                // 不考虑当前缓冲区长度,直接进行寻址操作.
                 // Seeking with Start/End doesn't care about our buffer length.
                 self.as_mut().get_pin_mut().start_seek(pos)?;
                 self.as_mut().get_pin_mut().poll_complete(cx)?
@@ -247,6 +271,7 @@ impl<R: AsyncRead + AsyncSeek> AsyncSeek for BufReader<R> {
 
         match res {
             Poll::Ready(res) => {
+                // 清空内部缓冲区
                 self.discard_buffer();
                 Poll::Ready(Ok(res))
             }

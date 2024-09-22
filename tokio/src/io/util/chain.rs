@@ -8,6 +8,8 @@ use std::task::{ready, Context, Poll};
 
 pin_project! {
     /// Stream for the [`chain`](super::AsyncReadExt::chain) method.
+    /// 用于 [`chain`](super::AsyncReadExt::chain) 方法的流.
+    /// 合并两个读取
     #[must_use = "streams do nothing unless polled"]
     #[cfg_attr(docsrs, doc(cfg(feature = "io-util")))]
     pub struct Chain<T, U> {
@@ -91,10 +93,12 @@ where
     ) -> Poll<io::Result<()>> {
         let me = self.project();
 
+        // 先将第一个读取完
         if !*me.done_first {
             let rem = buf.remaining();
             ready!(me.first.poll_read(cx, buf))?;
             if buf.remaining() == rem {
+                // 没有读取到数据,表示第一个已经读取完
                 *me.done_first = true;
             } else {
                 return Poll::Ready(Ok(()));
@@ -114,6 +118,7 @@ where
 
         if !*me.done_first {
             match ready!(me.first.poll_fill_buf(cx)?) {
+                // 没读取到数据,第一个读取完毕
                 [] => {
                     *me.done_first = true;
                 }

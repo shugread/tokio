@@ -1,8 +1,14 @@
 //! Split a single value implementing `AsyncRead + AsyncWrite` into separate
 //! `AsyncRead` and `AsyncWrite` handles.
 //!
+//! 将实现 `AsyncRead + AsyncWrite` 的单个值拆分为单独的
+//! `AsyncRead` 和 `AsyncWrite` 句柄.
+//!
 //! To restore this read/write object from its `split::ReadHalf` and
 //! `split::WriteHalf` use `unsplit`.
+//!
+//! 要从其 `split::ReadHalf` 和
+//! `split::WriteHalf` 恢复此读/写对象,请使用 `unsplit`.
 
 use crate::io::{AsyncRead, AsyncWrite, ReadBuf};
 
@@ -15,11 +21,13 @@ use std::task::{Context, Poll};
 
 cfg_io_util! {
     /// The readable half of a value returned from [`split`](split()).
+    /// 可读的部分
     pub struct ReadHalf<T> {
         inner: Arc<Inner<T>>,
     }
 
     /// The writable half of a value returned from [`split`](split()).
+    /// 可写的部分
     pub struct WriteHalf<T> {
         inner: Arc<Inner<T>>,
     }
@@ -80,6 +88,7 @@ impl<T> ReadHalf<T> {
     /// If this `ReadHalf` and the given `WriteHalf` do not originate from the
     /// same `split` operation this method will panic.
     /// This can be checked ahead of time by calling [`is_pair_of()`](Self::is_pair_of).
+    /// 合并
     #[track_caller]
     pub fn unsplit(self, wr: WriteHalf<T>) -> T
     where

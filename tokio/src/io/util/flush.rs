@@ -13,6 +13,7 @@ pin_project! {
     /// Created by the [`AsyncWriteExt::flush`][flush] function.
     ///
     /// [flush]: crate::io::AsyncWriteExt::flush
+    /// 刷新流
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct Flush<'a, A: ?Sized> {

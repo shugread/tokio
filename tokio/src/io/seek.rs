@@ -9,6 +9,7 @@ use std::task::{ready, Context, Poll};
 
 pin_project! {
     /// Future for the [`seek`](crate::io::AsyncSeekExt::seek) method.
+    /// [`seek`](crate::io::AsyncSeekExt::seek) 方法的Future.
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct Seek<'a, S: ?Sized> {
@@ -42,9 +43,12 @@ where
         match me.pos {
             Some(pos) => {
                 // ensure no seek in progress
+                // 等待完成
                 ready!(Pin::new(&mut *me.seek).poll_complete(cx))?;
+                // 设置pos
                 match Pin::new(&mut *me.seek).start_seek(*pos) {
                     Ok(()) => {
+                        // 取消pos
                         *me.pos = None;
                         Pin::new(&mut *me.seek).poll_complete(cx)
                     }

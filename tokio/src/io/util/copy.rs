@@ -7,11 +7,17 @@ use std::task::{ready, Context, Poll};
 
 #[derive(Debug)]
 pub(super) struct CopyBuffer {
+    // 表示读取是否完成
     read_done: bool,
+    // 表示写入器是否需要刷新
     need_flush: bool,
+    // 当前缓冲区中的位置
     pos: usize,
+    // 缓冲区的有效数据容量
     cap: usize,
+    // 成功写入的字节总数
     amt: u64,
+    // 用于存储数据的缓冲区
     buf: Box<[u8]>,
 }
 
@@ -39,9 +45,11 @@ impl CopyBuffer {
         let mut buf = ReadBuf::new(&mut me.buf);
         buf.set_filled(me.cap);
 
+        // 读取数据
         let res = reader.poll_read(cx, &mut buf);
         if let Poll::Ready(Ok(())) = res {
             let filled_len = buf.filled().len();
+            // 读取完成
             me.read_done = me.cap == filled_len;
             me.cap = filled_len;
         }
@@ -59,11 +67,13 @@ impl CopyBuffer {
         W: AsyncWrite + ?Sized,
     {
         let me = &mut *self;
+        // 写入数据
         match writer.as_mut().poll_write(cx, &me.buf[me.pos..me.cap]) {
             Poll::Pending => {
                 // Top up the buffer towards full if we can read a bit more
                 // data - this should improve the chances of a large write
                 if !me.read_done && me.cap < me.buf.len() {
+                    // 再次读取数据
                     ready!(me.poll_fill_buf(cx, reader.as_mut()))?;
                 }
                 Poll::Pending
@@ -98,7 +108,9 @@ impl CopyBuffer {
         loop {
             // If there is some space left in our buffer, then we try to read some
             // data to continue, thus maximizing the chances of a large write.
+            // 缓冲区的有效数据容量cap小于buf的容量, 并且没有读取完成
             if self.cap < self.buf.len() && !self.read_done {
+                // 读取数据到buf
                 match self.poll_fill_buf(cx, reader.as_mut()) {
                     Poll::Ready(Ok(())) => {
                         #[cfg(any(
@@ -130,6 +142,7 @@ impl CopyBuffer {
                     Poll::Pending => {
                         // Ignore pending reads when our buffer is not empty, because
                         // we can try to write data immediately.
+                        // 尝试立即写入数据
                         if self.pos == self.cap {
                             // Try flushing when the reader has no progress to avoid deadlock
                             // when the reader depends on buffered writer.
@@ -149,6 +162,7 @@ impl CopyBuffer {
                                 self.need_flush = false;
                             }
 
+                            // 挂起
                             return Poll::Pending;
                         }
                     }
@@ -175,6 +189,7 @@ impl CopyBuffer {
                         "write zero byte into writer",
                     )));
                 } else {
+                    // 增加写入的索引
                     self.pos += i;
                     self.amt += i as u64;
                     self.need_flush = true;
@@ -190,11 +205,13 @@ impl CopyBuffer {
             );
 
             // All data has been written, the buffer can be considered empty again
+            // 所有数据已写入, 缓冲区可再次被视为空
             self.pos = 0;
             self.cap = 0;
 
             // If we've written all the data and we've seen EOF, flush out the
             // data and finish the transfer.
+            // 读取完成
             if self.read_done {
                 ready!(writer.as_mut().poll_flush(cx))?;
                 #[cfg(any(
@@ -266,6 +283,7 @@ cfg_io_util! {
     /// # Ok(())
     /// # }
     /// ```
+    /// 异步将读取器的全部内容复制到写入器中.
     pub async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W) -> io::Result<u64>
     where
         R: AsyncRead + Unpin + ?Sized,

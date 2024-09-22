@@ -7,6 +7,7 @@ use std::ops;
 
 // These must be unique.
 // same as mio
+// 与 mio 相同
 const READABLE: usize = 0b0001;
 const WRITABLE: usize = 0b0010;
 // The following are not available on all platforms.
@@ -24,6 +25,7 @@ const ERROR: usize = 0b0010_0000;
 ///
 /// Specifies the readiness events the caller is interested in when awaiting on
 /// I/O resource readiness states.
+/// 准备事件兴趣
 #[cfg_attr(docsrs, doc(cfg(feature = "net")))]
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Interest(usize);

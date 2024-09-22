@@ -30,6 +30,7 @@ cfg_io_util! {
     /// See [module][crate::io] documentation for more details.
     ///
     /// [`AsyncSeek`]: AsyncSeek
+    /// 拓展[`AsyncSeek`]
     pub trait AsyncSeekExt: AsyncSeek {
         /// Creates a future which will seek an IO object, and then yield the
         /// new position in the object and the object itself.
@@ -60,6 +61,7 @@ cfg_io_util! {
         /// # Ok(())
         /// # }
         /// ```
+        /// 创建一个未来,它将寻找一个 IO 对象,然后产生对象中的新位置和对象本身.
         fn seek(&mut self, pos: SeekFrom) -> Seek<'_, Self>
         where
             Self: Unpin,
@@ -70,6 +72,7 @@ cfg_io_util! {
         /// Creates a future which will rewind to the beginning of the stream.
         ///
         /// This is convenience method, equivalent to `self.seek(SeekFrom::Start(0))`.
+        /// 倒回到流开头的未来.
         fn rewind(&mut self) -> Seek<'_, Self>
         where
             Self: Unpin,
@@ -81,6 +84,7 @@ cfg_io_util! {
         /// start of the stream.
         ///
         /// This is equivalent to `self.seek(SeekFrom::Current(0))`.
+        /// 返回从流的开始处开始的当前搜索位置
         fn stream_position(&mut self) -> Seek<'_, Self>
         where
             Self: Unpin,

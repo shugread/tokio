@@ -20,6 +20,7 @@ use std::mem::MaybeUninit;
 /// It is undefined behavior to de-initialize any bytes from the uninitialized
 /// region, since it is merely unknown whether this region is uninitialized or
 /// not, and if part of it turns out to be initialized, it must stay initialized.
+/// 围绕逐步填充和初始化的字节缓冲区的包装器.
 pub struct ReadBuf<'a> {
     buf: &'a mut [MaybeUninit<u8>],
     filled: usize,
@@ -28,6 +29,7 @@ pub struct ReadBuf<'a> {
 
 impl<'a> ReadBuf<'a> {
     /// Creates a new `ReadBuf` from a fully initialized buffer.
+    /// 从完全初始化的缓冲区创建一个新的`ReadBuf`.
     #[inline]
     pub fn new(buf: &'a mut [u8]) -> ReadBuf<'a> {
         let initialized = buf.len();
@@ -42,6 +44,7 @@ impl<'a> ReadBuf<'a> {
     /// Creates a new `ReadBuf` from a fully uninitialized buffer.
     ///
     /// Use `assume_init` if part of the buffer is known to be already initialized.
+    /// 从完全未初始化的缓冲区创建一个新的`ReadBuf`.
     #[inline]
     pub fn uninit(buf: &'a mut [MaybeUninit<u8>]) -> ReadBuf<'a> {
         ReadBuf {
@@ -58,6 +61,7 @@ impl<'a> ReadBuf<'a> {
     }
 
     /// Returns a shared reference to the filled portion of the buffer.
+    /// 返回对缓冲区已填充部分的共享引用.
     #[inline]
     pub fn filled(&self) -> &[u8] {
         let slice = &self.buf[..self.filled];
@@ -76,6 +80,7 @@ impl<'a> ReadBuf<'a> {
     }
 
     /// Returns a new `ReadBuf` comprised of the unfilled section up to `n`.
+    /// 返回一个由最多`n`个未填充部分组成的新的`ReadBuf`.
     #[inline]
     pub fn take(&mut self, n: usize) -> ReadBuf<'_> {
         let max = std::cmp::min(self.remaining(), n);
@@ -86,6 +91,7 @@ impl<'a> ReadBuf<'a> {
     /// Returns a shared reference to the initialized portion of the buffer.
     ///
     /// This includes the filled portion.
+    /// 返回已经初始化的buffer
     #[inline]
     pub fn initialized(&self) -> &[u8] {
         let slice = &self.buf[..self.initialized];
@@ -131,6 +137,7 @@ impl<'a> ReadBuf<'a> {
     ///
     /// The caller must not de-initialize portions of the buffer that have already been initialized.
     /// This includes any bytes in the region marked as uninitialized by `ReadBuf`.
+    /// 返回未填充的部分
     #[inline]
     pub unsafe fn unfilled_mut(&mut self) -> &mut [MaybeUninit<u8>] {
         &mut self.buf[self.filled..]
@@ -159,6 +166,7 @@ impl<'a> ReadBuf<'a> {
         // This can't overflow, otherwise the assert above would have failed.
         let end = self.filled + n;
 
+        // 初始化未填充的部分
         if self.initialized < end {
             unsafe {
                 self.buf[self.initialized..end]
@@ -175,6 +183,7 @@ impl<'a> ReadBuf<'a> {
     }
 
     /// Returns the number of bytes at the end of the slice that have not yet been filled.
+    /// 返回切片末尾尚未填充的字节数.
     #[inline]
     pub fn remaining(&self) -> usize {
         self.capacity() - self.filled
@@ -183,6 +192,7 @@ impl<'a> ReadBuf<'a> {
     /// Clears the buffer, resetting the filled region to empty.
     ///
     /// The number of initialized bytes is not changed, and the contents of the buffer are not modified.
+    /// 清除填充
     #[inline]
     pub fn clear(&mut self) {
         self.filled = 0;
@@ -230,6 +240,7 @@ impl<'a> ReadBuf<'a> {
     /// # Safety
     ///
     /// The caller must ensure that `n` unfilled bytes of the buffer have already been initialized.
+    /// 请求初始化数量
     #[inline]
     pub unsafe fn assume_init(&mut self, n: usize) {
         let new = self.filled + n;
@@ -243,9 +254,11 @@ impl<'a> ReadBuf<'a> {
     /// # Panics
     ///
     /// Panics if `self.remaining()` is less than `buf.len()`.
+    /// 添加数据到bufer
     #[inline]
     #[track_caller]
     pub fn put_slice(&mut self, buf: &[u8]) {
+        // 剩余容量要够
         assert!(
             self.remaining() >= buf.len(),
             "buf.len() must fit in remaining(); buf.len() = {}, remaining() = {}",
@@ -258,6 +271,7 @@ impl<'a> ReadBuf<'a> {
         let end = self.filled + amt;
 
         // Safety: the length is asserted above
+        // 写入数据
         unsafe {
             self.buf[self.filled..end]
                 .as_mut_ptr()
@@ -268,6 +282,7 @@ impl<'a> ReadBuf<'a> {
         if self.initialized < end {
             self.initialized = end;
         }
+        // 更新填充索引
         self.filled = end;
     }
 }

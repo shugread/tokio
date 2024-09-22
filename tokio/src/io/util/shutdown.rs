@@ -12,6 +12,7 @@ pin_project! {
     ///
     /// Created by the [`AsyncWriteExt::shutdown`][shutdown] function.
     /// [shutdown]: [`crate::io::AsyncWriteExt::shutdown`]
+    /// 关闭
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     #[derive(Debug)]
     pub struct Shutdown<'a, A: ?Sized> {

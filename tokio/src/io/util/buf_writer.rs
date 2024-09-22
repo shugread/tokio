@@ -9,6 +9,7 @@ use std::task::{ready, Context, Poll};
 
 pin_project! {
     /// Wraps a writer and buffers its output.
+    /// 包装一个写入器并缓冲其输出.
     ///
     /// It can be excessively inefficient to work directly with something that
     /// implements [`AsyncWrite`]. A `BufWriter` keeps an in-memory buffer of data and
@@ -33,6 +34,7 @@ pin_project! {
         #[pin]
         pub(super) inner: W,
         pub(super) buf: Vec<u8>,
+        // 已经写入数据的下标
         pub(super) written: usize,
         pub(super) seek_state: SeekState,
     }
@@ -41,6 +43,8 @@ pin_project! {
 impl<W: AsyncWrite> BufWriter<W> {
     /// Creates a new `BufWriter` with a default buffer capacity. The default is currently 8 KB,
     /// but may change in the future.
+    /// 创建具有默认缓冲区容量的新`BufWriter`,默认值目前为 8 KB,
+    /// 但将来可能会更改.
     pub fn new(inner: W) -> Self {
         Self::with_capacity(DEFAULT_BUF_SIZE, inner)
     }
@@ -55,6 +59,7 @@ impl<W: AsyncWrite> BufWriter<W> {
         }
     }
 
+    // 将buf数据全部写入
     fn flush_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let mut me = self.project();
 
@@ -121,12 +126,14 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
+        // 数据大于buf容量,先将数据写入
         if self.buf.len() + buf.len() > self.buf.capacity() {
             ready!(self.as_mut().flush_buf(cx))?;
         }
 
         let me = self.project();
         if buf.len() >= me.buf.capacity() {
+            // 大量数据不缓存
             me.inner.poll_write(cx, buf)
         } else {
             Poll::Ready(me.buf.write(buf))
@@ -139,34 +146,42 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
         mut bufs: &[IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
         if self.inner.is_write_vectored() {
+            // 全部数据长度
             let total_len = bufs
                 .iter()
                 .fold(0usize, |acc, b| acc.saturating_add(b.len()));
             if total_len > self.buf.capacity() - self.buf.len() {
+                // 将原有数据先写入
                 ready!(self.as_mut().flush_buf(cx))?;
             }
             let me = self.as_mut().project();
             if total_len >= me.buf.capacity() {
+                // 数据量大,将数据直接写入
                 // It's more efficient to pass the slices directly to the
                 // underlying writer than to buffer them.
                 // The case when the total_len calculation saturates at
                 // usize::MAX is also handled here.
                 me.inner.poll_write_vectored(cx, bufs)
             } else {
+                // 将数据写入buffer
                 bufs.iter().for_each(|b| me.buf.extend_from_slice(b));
                 Poll::Ready(Ok(total_len))
             }
         } else {
             // Remove empty buffers at the beginning of bufs.
+            // 删除 bufs 开头的空缓冲区.
             while bufs.first().map(|buf| buf.len()) == Some(0) {
                 bufs = &bufs[1..];
             }
+            // bufs是空的
             if bufs.is_empty() {
                 return Poll::Ready(Ok(0));
             }
             // Flush if the first buffer doesn't fit.
             let first_len = bufs[0].len();
+            // buf容量不足保存bufs[0]的数据
             if first_len > self.buf.capacity() - self.buf.len() {
+                // 刷新数据
                 ready!(self.as_mut().flush_buf(cx))?;
                 debug_assert!(self.buf.is_empty());
             }
@@ -174,17 +189,22 @@ impl<W: AsyncWrite> AsyncWrite for BufWriter<W> {
             if first_len >= me.buf.capacity() {
                 // The slice is at least as large as the buffering capacity,
                 // so it's better to write it directly, bypassing the buffer.
+                // bufs的数据太大,不缓存
                 debug_assert!(me.buf.is_empty());
                 return me.inner.poll_write(cx, &bufs[0]);
             } else {
+                // 缓存数据
                 me.buf.extend_from_slice(&bufs[0]);
+                // 增加bufs
                 bufs = &bufs[1..];
             }
             let mut total_written = first_len;
             debug_assert!(total_written != 0);
             // Append the buffers that fit in the internal buffer.
+            // 将能缓存的数据缓存
             for buf in bufs {
                 if buf.len() > me.buf.capacity() - me.buf.len() {
+                    // 数据量太大,不再缓存
                     break;
                 } else {
                     me.buf.extend_from_slice(buf);
@@ -228,6 +248,7 @@ impl<W: AsyncWrite + AsyncSeek> AsyncSeek for BufWriter<W> {
         // We need to flush the internal buffer before seeking.
         // It receives a `Context` and returns a `Poll`, so it cannot be called
         // inside `start_seek`.
+        // 设置seek_state
         *self.project().seek_state = SeekState::Start(pos);
         Ok(())
     }
@@ -242,17 +263,22 @@ impl<W: AsyncWrite + AsyncSeek> AsyncSeek for BufWriter<W> {
         };
 
         // Flush the internal buffer before seeking.
+        // 先刷新数据
         ready!(self.as_mut().flush_buf(cx))?;
 
         let mut me = self.project();
         if let Some(pos) = pos {
             // Ensure previous seeks have finished before starting a new one
+            // 确保在开始新的搜索之前先前的搜索已经完成
             ready!(me.inner.as_mut().poll_complete(cx))?;
+            // 设置新的seek
             if let Err(e) = me.inner.as_mut().start_seek(pos) {
+                // 出错恢复初始状态
                 *me.seek_state = SeekState::Init;
                 return Poll::Ready(Err(e));
             }
         }
+        // 轮询seek
         match me.inner.poll_complete(cx) {
             Poll::Ready(res) => {
                 *me.seek_state = SeekState::Init;

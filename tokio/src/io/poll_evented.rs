@@ -10,6 +10,14 @@ use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::task::ready;
 
 cfg_io_driver! {
+    /// 将实现 [`std::io::Read`] 和/或 [`std::io::Write`] 特征的 I/O 资源与驱动它的反应堆关联.
+    ///
+    /// `PollEvented` 在内部使用 [`Registration`] 来获取实现 [`mio::event::Source`]
+    /// 以及 [`std::io::Read`] 和/或 [`std::io::Write`] 的类型,并将其与驱动它的反应器关联起来.
+    ///
+    /// 一旦 [`mio::event::Source`] 类型被 `PollEvented` 包装,它就可以在 Future 的执行模型中使用.
+    /// 因此,`PollEvented` 类型使用底层 I/O 资源以及反应器提供的就绪事件来提供 [`AsyncRead`] 和 [`AsyncWrite`] 实现.
+    ///
     /// Associates an I/O resource that implements the [`std::io::Read`] and/or
     /// [`std::io::Write`] traits with the reactor that drives it.
     ///
@@ -111,6 +119,7 @@ impl<E: Source> PollEvented<E> {
         Self::new_with_interest_and_handle(io, interest, scheduler::Handle::current())
     }
 
+    // 注册io
     #[track_caller]
     pub(crate) fn new_with_interest_and_handle(
         mut io: E,
@@ -131,6 +140,7 @@ impl<E: Source> PollEvented<E> {
     }
 
     /// Deregisters the inner io from the registration and returns a Result containing the inner io.
+    /// 获取内部值, 并注销io
     #[cfg(any(feature = "net", feature = "process"))]
     pub(crate) fn into_inner(mut self) -> io::Result<E> {
         let mut inner = self.io.take().unwrap(); // As io shouldn't ever be None, just unwrap here.
@@ -177,6 +187,7 @@ feature! {
             use std::io::Read;
 
             loop {
+                // 等待可读
                 let evt = ready!(self.registration.poll_read_ready(cx))?;
 
                 let b = &mut *(buf.unfilled_mut() as *mut [std::mem::MaybeUninit<u8>] as *mut [u8]);
@@ -185,6 +196,7 @@ feature! {
                 #[allow(unused_variables)]
                 let len = b.len();
 
+                // 读取数据
                 match self.io.as_ref().unwrap().read(b) {
                     Ok(n) => {
                         // When mio is using the epoll or kqueue selector, reading a partially full
@@ -216,11 +228,13 @@ feature! {
                             )
                         ))]
                         if 0 < n && n < len {
+                            // 清除状态
                             self.registration.clear_readiness(evt);
                         }
 
                         // Safety: We trust `TcpStream::read` to have filled up `n` bytes in the
                         // buffer.
+                        // 设置写入长度
                         buf.assume_init(n);
                         buf.advance(n);
                         return Poll::Ready(Ok(()));
@@ -240,8 +254,10 @@ feature! {
             use std::io::Write;
 
             loop {
+                // 等待可写
                 let evt = ready!(self.registration.poll_write_ready(cx))?;
 
+                // 写入数据
                 match self.io.as_ref().unwrap().write(buf) {
                     Ok(n) => {
                         // if we write only part of our buffer, this is sufficient on unix to show
@@ -299,6 +315,7 @@ impl<E: Source> Drop for PollEvented<E> {
     fn drop(&mut self) {
         if let Some(mut io) = self.io.take() {
             // Ignore errors
+            // 注销io
             let _ = self.registration.deregister(&mut io);
         }
     }

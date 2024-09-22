@@ -34,6 +34,7 @@ cfg_io_std! {
     ///     Ok(())
     /// }
     /// ```
+    /// 进程标准错误流的句柄.
     #[derive(Debug)]
     pub struct Stderr {
         std: SplitByUtf8BoundaryIfWindows<Blocking<std::io::Stderr>>,

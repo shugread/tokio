@@ -44,6 +44,7 @@ use std::{
 /// # Ok(())
 /// # }
 /// ```
+/// 用于在内存中读取和写入字节的双向管道.
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(feature = "io-util")))]
 pub struct DuplexStream {
@@ -72,6 +73,7 @@ pub struct DuplexStream {
 /// # Ok(())
 /// # }
 /// ```
+/// 用于在内存中读取和写入字节的单向管道.
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(feature = "io-util")))]
 pub struct SimplexStream {
@@ -80,17 +82,22 @@ pub struct SimplexStream {
     /// Using a `BytesMut` because it has efficient `Buf` and `BufMut`
     /// functionality already. Additionally, it can try to copy data in the
     /// same buffer if there read index has advanced far enough.
+    /// 存储写入和读取的字节的缓冲区.
     buffer: BytesMut,
     /// Determines if the write side has been closed.
+    /// 确定写入端是否已关闭.
     is_closed: bool,
     /// The maximum amount of bytes that can be written before returning
     /// `Poll::Pending`.
+    /// 返回前可以写入的最大字节数
     max_buf_size: usize,
     /// If the `read` side has been polled and is pending, this is the waker
     /// for that parked task.
+    /// 读取端的waker
     read_waker: Option<Waker>,
     /// If the `write` side has filled the `max_buf_size` and returned
     /// `Poll::Pending`, this is the waker for that parked task.
+    /// 写入端的waker
     write_waker: Option<Waker>,
 }
 
@@ -229,6 +236,7 @@ impl SimplexStream {
         }
     }
 
+    // 关闭写入
     fn close_write(&mut self) {
         self.is_closed = true;
         // needs to notify any readers that no more data will come
@@ -237,6 +245,7 @@ impl SimplexStream {
         }
     }
 
+    // 关闭读取
     fn close_read(&mut self) {
         self.is_closed = true;
         // needs to notify any writers that they have to abort
@@ -251,12 +260,16 @@ impl SimplexStream {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
         if self.buffer.has_remaining() {
+            // 有数据
             let max = self.buffer.remaining().min(buf.remaining());
+            // 写入数据
             buf.put_slice(&self.buffer[..max]);
+            // 修改buffer
             self.buffer.advance(max);
             if max > 0 {
                 // The passed `buf` might have been empty, don't wake up if
                 // no bytes have been moved.
+                // 通知读取者
                 if let Some(waker) = self.write_waker.take() {
                     waker.wake();
                 }
@@ -276,17 +289,22 @@ impl SimplexStream {
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
         if self.is_closed {
+            // 已关闭
             return Poll::Ready(Err(std::io::ErrorKind::BrokenPipe.into()));
         }
+        // 可写入数据的数量
         let avail = self.max_buf_size - self.buffer.len();
         if avail == 0 {
+            // 不可写入数据
             self.write_waker = Some(cx.waker().clone());
             return Poll::Pending;
         }
 
         let len = buf.len().min(avail);
+        // 写入数据
         self.buffer.extend_from_slice(&buf[..len]);
         if let Some(waker) = self.read_waker.take() {
+            // 唤醒读取者
             waker.wake();
         }
         Poll::Ready(Ok(len))
@@ -298,15 +316,18 @@ impl SimplexStream {
         bufs: &[std::io::IoSlice<'_>],
     ) -> Poll<Result<usize, std::io::Error>> {
         if self.is_closed {
+            // 已关闭
             return Poll::Ready(Err(std::io::ErrorKind::BrokenPipe.into()));
         }
         let avail = self.max_buf_size - self.buffer.len();
         if avail == 0 {
+            // 不可写入
             self.write_waker = Some(cx.waker().clone());
             return Poll::Pending;
         }
 
         let mut rem = avail;
+        // 循环写入数据
         for buf in bufs {
             if rem == 0 {
                 break;
@@ -318,6 +339,7 @@ impl SimplexStream {
         }
 
         if let Some(waker) = self.read_waker.take() {
+            // 唤醒读取者
             waker.wake();
         }
         Poll::Ready(Ok(avail - rem))

@@ -25,6 +25,7 @@ cfg_io_std! {
     ///
     /// [`stdin`]: fn@stdin
     /// [`AsyncRead`]: trait@AsyncRead
+    /// 进程标准输入流的句柄.
     #[derive(Debug)]
     pub struct Stdin {
         std: Blocking<std::io::Stdin>,

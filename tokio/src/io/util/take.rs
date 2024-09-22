@@ -8,6 +8,7 @@ use std::{cmp, io};
 
 pin_project! {
     /// Stream for the [`take`](super::AsyncReadExt::take) method.
+    /// 用于 [`take`](super::AsyncReadExt::take) 方法的流.
     #[derive(Debug)]
     #[must_use = "streams do nothing unless you `.await` or poll them"]
     #[cfg_attr(docsrs, doc(cfg(feature = "io-util")))]
@@ -34,6 +35,7 @@ impl<R: AsyncRead> Take<R> {
     ///
     /// This instance may reach `EOF` after reading fewer bytes than indicated by
     /// this method if the underlying [`AsyncRead`] instance reaches EOF.
+    /// 返回在此实例返回 EOF 之前可以读取的剩余字节数.
     pub fn limit(&self) -> u64 {
         self.limit_
     }
@@ -89,6 +91,7 @@ impl<R: AsyncRead> AsyncRead for Take<R> {
         let mut b = buf.take(usize::try_from(*me.limit_).unwrap_or(usize::MAX));
 
         let buf_ptr = b.filled().as_ptr();
+        // 读取数据
         ready!(me.inner.poll_read(cx, &mut b))?;
         assert_eq!(b.filled().as_ptr(), buf_ptr);
 
@@ -96,9 +99,11 @@ impl<R: AsyncRead> AsyncRead for Take<R> {
 
         // We need to update the original ReadBuf
         unsafe {
+            // 修改buf
             buf.assume_init(n);
         }
         buf.advance(n);
+        // 更新limit_
         *me.limit_ -= n as u64;
         Poll::Ready(Ok(()))
     }

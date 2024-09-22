@@ -10,6 +10,7 @@ use std::task::{ready, Context, Poll};
 
 pin_project! {
     /// A future to write some of the buffer to an `AsyncWrite`.
+    // 将buf中的全部数据写入
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct WriteAllBuf<'a, W, B> {

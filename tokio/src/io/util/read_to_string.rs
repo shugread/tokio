@@ -12,6 +12,7 @@ use std::{io, mem};
 
 pin_project! {
     /// Future for the [`read_to_string`](super::AsyncReadExt::read_to_string) method.
+    /// 用于 [`read_to_string`](super::AsyncReadExt::read_to_string) 方法的流.
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct ReadToString<'a, R: ?Sized> {
@@ -54,6 +55,7 @@ fn read_to_string_internal<R: AsyncRead + ?Sized>(
     read: &mut usize,
     cx: &mut Context<'_>,
 ) -> Poll<io::Result<usize>> {
+    // 读取全部数据
     let io_res = ready!(read_to_end_internal(buf, reader, read, cx));
     let utf8_res = String::from_utf8(buf.take());
 
@@ -61,6 +63,7 @@ fn read_to_string_internal<R: AsyncRead + ?Sized>(
 
     debug_assert!(buf.is_empty());
     debug_assert!(output.is_empty());
+    // 处理错误
     finish_string_read(io_res, utf8_res, *read, output, true)
 }
 

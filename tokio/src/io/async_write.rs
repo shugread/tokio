@@ -55,6 +55,13 @@ pub trait AsyncWrite {
     /// `Poll::Pending` and arranges for the current task (via
     /// `cx.waker()`) to receive a notification when the object becomes
     /// writable or is closed.
+    /// 返回值:
+    /// * `Poll::Ready(Ok(n))` 表示立即写入了 `n` 个字节的数据.
+    /// * `Poll::Pending` 表示没有从提供的缓冲区写入任何数据.
+    ///   I/O 对象当前不可写,但将来可能会可写.最重要的是,
+    ///   **当前 Future 的任务计划在对象可写时取消暂停**。这意味着,
+    ///   与 `Future::poll` 一样,当 I/O 对象再次可写时,您将收到通知.
+    /// * 对于其他错误，`Poll::Ready(Err(e))` 是来自底层对象的标准 I/O 错误.
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -70,6 +77,7 @@ pub trait AsyncWrite {
     /// `Poll::Pending` and arranges for the current task (via
     /// `cx.waker()`) to receive a notification when the object can make
     /// progress towards flushing.
+    /// 尝试刷新对象,确保所有缓冲数据都能到达目的地.
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>>;
 
     /// Initiates or attempts to shut down this writer, returning success when
@@ -130,6 +138,7 @@ pub trait AsyncWrite {
     ///
     /// This function will panic if not called within the context of a future's
     /// task.
+    /// 启动或尝试关闭此写入器,当 I/O 连接完全关闭时返回成功.
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>>;
 
     /// Like [`poll_write`], except that it writes from a slice of buffers.
@@ -155,6 +164,7 @@ pub trait AsyncWrite {
     /// pending.
     ///
     /// [`poll_write`]: AsyncWrite::poll_write
+    /// 与 [`poll_write`] 类似,不同之处在于它从一组缓冲区中写入.
     fn poll_write_vectored(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -177,6 +187,7 @@ pub trait AsyncWrite {
     /// The default implementation returns `false`.
     ///
     /// [`poll_write_vectored`]: AsyncWrite::poll_write_vectored
+    /// 确定此写入器是否具有有效的 [`poll_write_vectored`] 实现.
     fn is_write_vectored(&self) -> bool {
         false
     }
@@ -256,6 +267,7 @@ where
     }
 }
 
+// 写入Vec
 impl AsyncWrite for Vec<u8> {
     fn poll_write(
         self: Pin<&mut Self>,

@@ -9,11 +9,14 @@ use std::pin::Pin;
 use std::task::{ready, Context, Poll};
 
 /// `T` should not implement _both_ Read and Write.
+/// `T` 不应该同时实现读取和写入.
+/// 将阻塞读写转换成异步读写
 #[derive(Debug)]
 pub(crate) struct Blocking<T> {
     inner: Option<T>,
     state: State<T>,
     /// `true` if the lower IO layer needs flushing.
+    /// 需要刷新
     need_flush: bool,
 }
 
@@ -58,31 +61,40 @@ where
                 State::Idle(ref mut buf_cell) => {
                     let mut buf = buf_cell.take().unwrap();
 
+                    // buf有数据
                     if !buf.is_empty() {
+                        // 复制数据
                         buf.copy_to(dst);
                         *buf_cell = Some(buf);
                         return Poll::Ready(Ok(()));
                     }
 
+                    // 设置buf容量
                     buf.ensure_capacity_for(dst, DEFAULT_MAX_BUF_SIZE);
                     let mut inner = self.inner.take().unwrap();
 
+                    // 修改状态为Busy, 将阻塞任务调度到其他线程
                     self.state = State::Busy(sys::run(move || {
+                        // 读取数据
                         let res = buf.read_from(&mut inner);
                         (res, buf, inner)
                     }));
                 }
                 State::Busy(ref mut rx) => {
+                    // 等待数据读取完
                     let (res, mut buf, inner) = ready!(Pin::new(rx).poll(cx))?;
                     self.inner = Some(inner);
 
                     match res {
                         Ok(_) => {
+                            // 将数据读取到dst
                             buf.copy_to(dst);
+                            // 转换成空闲状态
                             self.state = State::Idle(Some(buf));
                             return Poll::Ready(Ok(()));
                         }
                         Err(e) => {
+                            // 读取出错
                             assert!(buf.is_empty());
 
                             self.state = State::Idle(Some(buf));
@@ -111,21 +123,26 @@ where
 
                     assert!(buf.is_empty());
 
+                    // 读取sr的值到buf
                     let n = buf.copy_from(src, DEFAULT_MAX_BUF_SIZE);
                     let mut inner = self.inner.take().unwrap();
 
                     self.state = State::Busy(sys::run(move || {
                         let n = buf.len();
+                        // 在其他线程写入数据
                         let res = buf.write_to(&mut inner).map(|()| n);
 
                         (res, buf, inner)
                     }));
-                    self.need_flush = true;
+                    self.need_flush = true; // 更新need_flush
 
+                    // 返回写入的数据长度
                     return Poll::Ready(Ok(n));
                 }
                 State::Busy(ref mut rx) => {
+                    // 等待完成
                     let (res, buf, inner) = ready!(Pin::new(rx).poll(cx))?;
+                    // 更新状态
                     self.state = State::Idle(Some(buf));
                     self.inner = Some(inner);
 
@@ -147,16 +164,19 @@ where
                         let mut inner = self.inner.take().unwrap();
 
                         self.state = State::Busy(sys::run(move || {
+                            // 刷新数据
                             let res = inner.flush().map(|()| 0);
                             (res, buf, inner)
                         }));
 
+                        // 更新need_flush
                         self.need_flush = false;
                     } else {
                         return Poll::Ready(Ok(()));
                     }
                 }
                 State::Busy(ref mut rx) => {
+                    // 转换空闲状态
                     let (res, buf, inner) = ready!(Pin::new(rx).poll(cx))?;
                     self.state = State::Idle(Some(buf));
                     self.inner = Some(inner);
@@ -201,6 +221,7 @@ impl Buf {
         self.buf.len() - self.pos
     }
 
+    // 将buf复制到dst,在buf数据读取完后,清空buf
     pub(crate) fn copy_to(&mut self, dst: &mut ReadBuf<'_>) -> usize {
         let n = cmp::min(self.len(), dst.remaining());
         dst.put_slice(&self.bytes()[..n]);
@@ -214,6 +235,7 @@ impl Buf {
         n
     }
 
+    // buf为空才能使用, 从src最多复制max_buf_size个数据
     pub(crate) fn copy_from(&mut self, src: &[u8], max_buf_size: usize) -> usize {
         assert!(self.is_empty());
 
@@ -223,10 +245,12 @@ impl Buf {
         n
     }
 
+    // 缓存的数据
     pub(crate) fn bytes(&self) -> &[u8] {
         &self.buf[self.pos..]
     }
 
+    // 扩大buf容量
     pub(crate) fn ensure_capacity_for(&mut self, bytes: &ReadBuf<'_>, max_buf_size: usize) {
         assert!(self.is_empty());
 
@@ -241,11 +265,12 @@ impl Buf {
         }
     }
 
+    // pos 为0, 读取数据
     pub(crate) fn read_from<T: Read>(&mut self, rd: &mut T) -> io::Result<usize> {
         let res = uninterruptibly!(rd.read(&mut self.buf));
 
         if let Ok(n) = res {
-            self.buf.truncate(n);
+            self.buf.truncate(n); // 截取n个长度
         } else {
             self.buf.clear();
         }
@@ -255,6 +280,7 @@ impl Buf {
         res
     }
 
+    // pos为0, 写入数据
     pub(crate) fn write_to<T: Write>(&mut self, wr: &mut T) -> io::Result<()> {
         assert_eq!(self.pos, 0);
 
@@ -274,6 +300,7 @@ cfg_fs! {
             ret
         }
 
+        // 复制数据到buf, 复制max_buf_size个数据
         pub(crate) fn copy_from_bufs(&mut self, bufs: &[io::IoSlice<'_>], max_buf_size: usize) -> usize {
             assert!(self.is_empty());
 

@@ -17,6 +17,7 @@ cfg_io_util! {
     ///
     /// [`empty`]: fn@empty
     /// [std]: std::io::empty
+    /// `Empty` 会忽略通过 [`AsyncWrite`] 写入的任何数据,并且当通过 [`AsyncRead`] 读取时将始终为空(返回零字节)
     pub struct Empty {
         _p: (),
     }

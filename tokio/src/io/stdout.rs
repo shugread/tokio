@@ -60,6 +60,7 @@ cfg_io_std! {
     /// ```
     #[derive(Debug)]
     pub struct Stdout {
+        // 标准输出
         std: SplitByUtf8BoundaryIfWindows<Blocking<std::io::Stdout>>,
     }
 

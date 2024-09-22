@@ -10,6 +10,7 @@ use std::task::{ready, Context, Poll};
 
 /// A future which can be used to easily read exactly enough bytes to fill
 /// a buffer.
+/// Future读取足够的字节来填充缓冲区.
 ///
 /// Created by the [`AsyncReadExt::read_exact`][read_exact].
 /// [`read_exact`]: [`crate::io::AsyncReadExt::read_exact`]
@@ -55,6 +56,7 @@ where
 
         loop {
             // if our buffer is empty, then we need to read some data to continue.
+            // 如果buf有剩余空间, 一直读取数据
             let rem = me.buf.remaining();
             if rem != 0 {
                 ready!(Pin::new(&mut *me.reader).poll_read(cx, me.buf))?;

@@ -83,6 +83,7 @@ fn poll_read_to_end<V: VecU8, R: AsyncRead + ?Sized>(
     let n = if try_small_read {
         // Read some bytes using a small read.
         let mut small_buf: [MaybeUninit<u8>; NUM_BYTES] = [MaybeUninit::uninit(); NUM_BYTES];
+        // 读取数据
         let mut small_read_buf = ReadBuf::uninit(&mut small_buf);
         poll_result = read.poll_read(cx, &mut small_read_buf);
         let to_write = small_read_buf.filled();
@@ -90,26 +91,33 @@ fn poll_read_to_end<V: VecU8, R: AsyncRead + ?Sized>(
         // Ensure we have enough space to fill our vector with what we read.
         read_buf = buf.get_read_buf();
         if to_write.len() > read_buf.remaining() {
+            // 扩容buf
             buf.reserve(NUM_BYTES);
             read_buf = buf.get_read_buf();
         }
+        // 写入数据
         read_buf.put_slice(to_write);
 
+        // 写入的数据长度
         to_write.len()
     } else {
         // Ensure we have enough space for reading.
+        // 确保我们有足够的读取空间.
         buf.reserve(NUM_BYTES);
         read_buf = buf.get_read_buf();
 
         // Read data directly into vector.
         let filled_before = read_buf.filled().len();
+        // 读取数据
         poll_result = read.poll_read(cx, &mut read_buf);
 
         // Compute the number of bytes read.
+        // 写入数据的长度
         read_buf.filled().len() - filled_before
     };
 
     // Update the length of the vector using the result of poll_read.
+    // 更新buf
     let read_buf_parts = into_read_buf_parts(read_buf);
     buf.apply_read_buf(read_buf_parts);
 

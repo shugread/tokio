@@ -9,6 +9,7 @@ use std::task::{ready, Context, Poll};
 
 pin_project! {
     /// Splitter for the [`split`](crate::io::AsyncBufReadExt::split) method.
+    /// 用于 [`split`](super::AsyncReadExt::split) 方法的流.
     ///
     /// A `Split` can be turned into a `Stream` with [`SplitStream`].
     ///

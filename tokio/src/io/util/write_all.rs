@@ -9,6 +9,7 @@ use std::pin::Pin;
 use std::task::{ready, Context, Poll};
 
 pin_project! {
+    // 将buf中的全部数据写入
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct WriteAll<'a, W: ?Sized> {

@@ -30,6 +30,7 @@ pub trait AsyncSeek {
     /// another seek in progress. To avoid this, it is advisable that any call
     /// to `start_seek` is preceded by a call to `poll_complete` to ensure all
     /// pending seeks have completed.
+    /// 尝试在流中查找偏移量
     fn start_seek(self: Pin<&mut Self>, position: SeekFrom) -> io::Result<()>;
 
     /// Waits for a seek operation to complete.
@@ -43,6 +44,7 @@ pub trait AsyncSeek {
     /// # Errors
     ///
     /// Seeking to a negative offset is considered an error.
+    /// 等待查找操作完成.
     fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<u64>>;
 }
 

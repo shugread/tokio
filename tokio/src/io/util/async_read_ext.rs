@@ -59,6 +59,7 @@ cfg_io_util! {
     /// See [module][crate::io] documentation for more details.
     ///
     /// [`AsyncRead`]: AsyncRead
+    /// 拓展[`AsyncRead`]
     pub trait AsyncReadExt: AsyncRead {
         /// Creates a new `AsyncRead` instance that chains this stream with
         /// `next`.
@@ -89,6 +90,7 @@ cfg_io_util! {
         ///     Ok(())
         /// }
         /// ```
+        /// 创建一个新的`AsyncRead`实例,将此流与`next`链接起来.
         fn chain<R>(self, next: R) -> Chain<Self, R>
         where
             Self: Sized,
@@ -165,6 +167,7 @@ cfg_io_util! {
         ///     Ok(())
         /// }
         /// ```
+        /// 从该源拉取一些字节到指定的缓冲区,返回读取了多少字节.
         fn read<'a>(&'a mut self, buf: &'a mut [u8]) -> Read<'a, Self>
         where
             Self: Unpin,
@@ -243,6 +246,7 @@ cfg_io_util! {
         ///     Ok(())
         /// }
         /// ```
+        /// 从该源将一些字节拉入指定的缓冲区,并推进缓冲区的内部光标.
         fn read_buf<'a, B>(&'a mut self, buf: &'a mut B) -> ReadBuf<'a, Self, B>
         where
             Self: Unpin,
@@ -305,6 +309,7 @@ cfg_io_util! {
         /// ```
         ///
         /// [`ErrorKind::UnexpectedEof`]: std::io::ErrorKind::UnexpectedEof
+        /// 读取填充`buf`所需的精确字节数.
         fn read_exact<'a>(&'a mut self, buf: &'a mut [u8]) -> ReadExact<'a, Self>
         where
             Self: Unpin,
@@ -355,6 +360,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个无符号的8位整数.
             fn read_u8(&mut self) -> ReadU8;
 
             /// Reads a signed 8 bit integer from the underlying reader.
@@ -399,6 +405,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个有符号的8位整数.
             fn read_i8(&mut self) -> ReadI8;
 
             /// Reads an unsigned 16-bit integer in big-endian order from the
@@ -443,6 +450,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个无符号的16位整数.
             fn read_u16(&mut self) -> ReadU16;
 
             /// Reads a signed 16-bit integer in big-endian order from the
@@ -487,6 +495,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个有无符号的16位整数.
             fn read_i16(&mut self) -> ReadI16;
 
             /// Reads an unsigned 32-bit integer in big-endian order from the
@@ -530,6 +539,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个无符号的32位整数.
             fn read_u32(&mut self) -> ReadU32;
 
             /// Reads a signed 32-bit integer in big-endian order from the
@@ -574,6 +584,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个有符号的32位整数.
             fn read_i32(&mut self) -> ReadI32;
 
             /// Reads an unsigned 64-bit integer in big-endian order from the
@@ -619,6 +630,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个无符号的64位整数.
             fn read_u64(&mut self) -> ReadU64;
 
             /// Reads an signed 64-bit integer in big-endian order from the
@@ -662,6 +674,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个有符号的64位整数.
             fn read_i64(&mut self) -> ReadI64;
 
             /// Reads an unsigned 128-bit integer in big-endian order from the
@@ -708,6 +721,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个无符号的128位整数.
             fn read_u128(&mut self) -> ReadU128;
 
             /// Reads an signed 128-bit integer in big-endian order from the
@@ -754,6 +768,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个有符号的128位整数.
             fn read_i128(&mut self) -> ReadI128;
 
             /// Reads an 32-bit floating point type in big-endian order from the
@@ -797,6 +812,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个32位浮点数.
             fn read_f32(&mut self) -> ReadF32;
 
             /// Reads an 64-bit floating point type in big-endian order from the
@@ -842,6 +858,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 读取一个64位浮点数.
             fn read_f64(&mut self) -> ReadF64;
 
             /// Reads an unsigned 16-bit integer in little-endian order from the
@@ -886,6 +903,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 以小端读取一个无符号的16位整数.
             fn read_u16_le(&mut self) -> ReadU16Le;
 
             /// Reads a signed 16-bit integer in little-endian order from the
@@ -930,6 +948,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 以小端读取一个有符号的16位整数.
             fn read_i16_le(&mut self) -> ReadI16Le;
 
             /// Reads an unsigned 32-bit integer in little-endian order from the
@@ -973,6 +992,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 以小端读取一个无符号的32位整数.
             fn read_u32_le(&mut self) -> ReadU32Le;
 
             /// Reads a signed 32-bit integer in little-endian order from the
@@ -1017,6 +1037,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 以小端读取一个有符号的32位整数.
             fn read_i32_le(&mut self) -> ReadI32Le;
 
             /// Reads an unsigned 64-bit integer in little-endian order from the
@@ -1062,6 +1083,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 以小端读取一个无符号的64位整数.
             fn read_u64_le(&mut self) -> ReadU64Le;
 
             /// Reads an signed 64-bit integer in little-endian order from the
@@ -1105,6 +1127,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 以小端读取一个有符号的64位整数.
             fn read_i64_le(&mut self) -> ReadI64Le;
 
             /// Reads an unsigned 128-bit integer in little-endian order from the
@@ -1151,6 +1174,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 以小端读取一个无符号的128位整数.
             fn read_u128_le(&mut self) -> ReadU128Le;
 
             /// Reads an signed 128-bit integer in little-endian order from the
@@ -1197,6 +1221,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 以小端读取一个有符号的128位整数.
             fn read_i128_le(&mut self) -> ReadI128Le;
 
             /// Reads an 32-bit floating point type in little-endian order from the
@@ -1240,6 +1265,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 以小端读取一个32位浮点数.
             fn read_f32_le(&mut self) -> ReadF32Le;
 
             /// Reads an 64-bit floating point type in little-endian order from the
@@ -1285,6 +1311,7 @@ cfg_io_util! {
             ///     Ok(())
             /// }
             /// ```
+            /// 以小端读取一个64位浮点数.
             fn read_f64_le(&mut self) -> ReadF64Le;
         }
 
@@ -1333,6 +1360,7 @@ cfg_io_util! {
         /// file.)
         ///
         /// [`tokio::fs::read`]: fn@crate::fs::read
+        /// 读取此源中的所有字节直到 EOF,并将它们放入`buf`中.
         fn read_to_end<'a>(&'a mut self, buf: &'a mut Vec<u8>) -> ReadToEnd<'a, Self>
         where
             Self: Unpin,
@@ -1380,6 +1408,7 @@ cfg_io_util! {
         /// reading from a file.)
         ///
         /// [`crate::fs::read_to_string`]: fn@crate::fs::read_to_string
+        /// 读取此源中的所有字节直到 EOF,并将它们附加到`buf`.
         fn read_to_string<'a>(&'a mut self, dst: &'a mut String) -> ReadToString<'a, Self>
         where
             Self: Unpin,
@@ -1418,6 +1447,7 @@ cfg_io_util! {
         ///     Ok(())
         /// }
         /// ```
+        /// 创建一个适配器,最多从中读取`limit`字节.
         fn take(self, limit: u64) -> Take<Self>
         where
             Self: Sized,

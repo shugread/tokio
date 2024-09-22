@@ -42,6 +42,8 @@ pub trait AsyncBufRead: AsyncRead {
     ///
     /// [`poll_read`]: AsyncRead::poll_read
     /// [`consume`]: AsyncBufRead::consume
+    /// 尝试返回内部缓冲区的内容,如果缓冲区为空,则用内部读取器中的更多数据填充它.
+    /// 返回空缓冲区表示流已到达 EOF.
     fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>>;
 
     /// Tells this buffer that `amt` bytes have been consumed from the buffer,
@@ -59,6 +61,8 @@ pub trait AsyncBufRead: AsyncRead {
     ///
     /// [`poll_read`]: AsyncRead::poll_read
     /// [`poll_fill_buf`]: AsyncBufRead::poll_fill_buf
+    /// 告知此缓冲区,缓冲区中已消耗了 `amt` 个字节,
+    /// 因此在对 [`poll_read`] 的调用中不应再返回这些字节.
     fn consume(self: Pin<&mut Self>, amt: usize);
 }
 

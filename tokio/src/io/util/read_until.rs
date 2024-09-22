@@ -44,6 +44,7 @@ where
     }
 }
 
+// 读取到`delimiter`或结束
 pub(super) fn read_until_internal<R: AsyncBufRead + ?Sized>(
     mut reader: Pin<&mut R>,
     cx: &mut Context<'_>,
@@ -55,6 +56,7 @@ pub(super) fn read_until_internal<R: AsyncBufRead + ?Sized>(
         let (done, used) = {
             let available = ready!(reader.as_mut().poll_fill_buf(cx))?;
             if let Some(i) = memchr::memchr(delimiter, available) {
+                // 包含分割, 保存数据
                 buf.extend_from_slice(&available[..=i]);
                 (true, i + 1)
             } else {
@@ -62,9 +64,11 @@ pub(super) fn read_until_internal<R: AsyncBufRead + ?Sized>(
                 (false, available.len())
             }
         };
+        // 提交获取到的数据长度
         reader.as_mut().consume(used);
         *read += used;
         if done || used == 0 {
+            // 读取完成
             return Poll::Ready(Ok(mem::replace(read, 0)));
         }
     }

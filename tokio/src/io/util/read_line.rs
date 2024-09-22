@@ -12,6 +12,7 @@ use std::task::{ready, Context, Poll};
 
 pin_project! {
     /// Future for the [`read_line`](crate::io::AsyncBufReadExt::read_line) method.
+    /// 用于 [`read_line`](super::AsyncReadExt::read_line) 方法的流.
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct ReadLine<'a, R: ?Sized> {
@@ -23,6 +24,7 @@ pin_project! {
         buf: Vec<u8>,
         // The number of bytes appended to buf. This can be less than buf.len() if
         // the buffer was not empty when the operation was started.
+        // 读取到buf的数据长度
         read: usize,
         // Make this future `!Unpin` for compatibility with async trait methods.
         #[pin]
@@ -45,6 +47,7 @@ where
 
 fn put_back_original_data(output: &mut String, mut vector: Vec<u8>, num_bytes_read: usize) {
     let original_len = vector.len() - num_bytes_read;
+    // 丢弃最后一次读取的数据
     vector.truncate(original_len);
     *output = String::from_utf8(vector).expect("The original data must be valid utf-8.");
 }
@@ -53,6 +56,7 @@ fn put_back_original_data(output: &mut String, mut vector: Vec<u8>, num_bytes_re
 ///
 /// The `truncate_on_io_error` `bool` is necessary because `read_to_string` and `read_line`
 /// disagree on what should happen when an IO error occurs.
+/// 处理各种失败情况并将字符串放回`output`.
 pub(super) fn finish_string_read(
     io_res: io::Result<usize>,
     utf8_res: Result<String, FromUtf8Error>,
@@ -62,6 +66,7 @@ pub(super) fn finish_string_read(
 ) -> Poll<io::Result<usize>> {
     match (io_res, utf8_res) {
         (Ok(num_bytes), Ok(string)) => {
+            // 读取成功
             debug_assert_eq!(read, 0);
             *output = string;
             Poll::Ready(Ok(num_bytes))
@@ -69,12 +74,14 @@ pub(super) fn finish_string_read(
         (Err(io_err), Ok(string)) => {
             *output = string;
             if truncate_on_io_error {
+                // 截取错误, 截取output的长度
                 let original_len = output.len() - read;
                 output.truncate(original_len);
             }
             Poll::Ready(Err(io_err))
         }
         (Ok(num_bytes), Err(utf8_err)) => {
+            // 读取成功, UTF-8编码错误
             debug_assert_eq!(read, 0);
             put_back_original_data(output, utf8_err.into_bytes(), num_bytes);
 
@@ -91,6 +98,7 @@ pub(super) fn finish_string_read(
     }
 }
 
+// 读取一行数据
 pub(super) fn read_line_internal<R: AsyncBufRead + ?Sized>(
     reader: Pin<&mut R>,
     cx: &mut Context<'_>,
@@ -99,6 +107,7 @@ pub(super) fn read_line_internal<R: AsyncBufRead + ?Sized>(
     read: &mut usize,
 ) -> Poll<io::Result<usize>> {
     let io_res = ready!(read_until_internal(reader, cx, b'\n', buf, read));
+    // 截取数据,转换成字符串
     let utf8_res = String::from_utf8(mem::take(buf));
 
     // At this point both buf and output are empty. The allocation is in utf8_res.

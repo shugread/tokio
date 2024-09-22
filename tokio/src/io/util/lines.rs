@@ -17,6 +17,7 @@ pin_project! {
     /// [`AsyncBufRead`]: crate::io::AsyncBufRead
     /// [`LinesStream`]: https://docs.rs/tokio-stream/0.1/tokio_stream/wrappers/struct.LinesStream.html
     /// [`lines`]: crate::io::AsyncBufReadExt::lines
+    /// 按行读取
     #[derive(Debug)]
     #[must_use = "streams do nothing unless polled"]
     #[cfg_attr(docsrs, doc(cfg(feature = "io-util")))]
@@ -109,6 +110,7 @@ where
     /// available on the underlying IO resource.  Note that on multiple calls to
     /// `poll_next_line`, only the `Waker` from the `Context` passed to the most
     /// recent call is scheduled to receive a wakeup.
+    /// 轮询流中的下一行.
     pub fn poll_next_line(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -118,10 +120,12 @@ where
         let n = ready!(read_line_internal(me.reader, cx, me.buf, me.bytes, me.read))?;
         debug_assert_eq!(*me.read, 0);
 
+        // 读取完成
         if n == 0 && me.buf.is_empty() {
             return Poll::Ready(Ok(None));
         }
 
+        // 去掉换行和回车
         if me.buf.ends_with('\n') {
             me.buf.pop();
 

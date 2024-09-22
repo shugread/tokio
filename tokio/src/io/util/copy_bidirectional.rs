@@ -29,14 +29,17 @@ where
     loop {
         match state {
             TransferState::Running(buf) => {
+                // 将r的数据复制到w
                 let count = ready!(buf.poll_copy(cx, r.as_mut(), w.as_mut()))?;
                 *state = TransferState::ShuttingDown(count);
             }
             TransferState::ShuttingDown(count) => {
+                // 读取完成
                 ready!(w.as_mut().poll_shutdown(cx))?;
 
                 *state = TransferState::Done(*count);
             }
+            // 已关闭
             TransferState::Done(count) => return Poll::Ready(Ok(*count)),
         }
     }
@@ -71,6 +74,10 @@ where
 /// # Return value
 ///
 /// Returns a tuple of bytes copied `a` to `b` and bytes copied `b` to `a`.
+/// 在`a`和`b`之间双向复制数据.
+/// 如果在一个流上观察到 EOF,则将在另一个流上调用 [`shutdown()`],
+/// 并且从该流的读取将停止.在另一个方向上复制数据将继续.
+/// 一旦两个通信方向都关闭,未来将成功完成.
 #[cfg_attr(docsrs, doc(cfg(feature = "io-util")))]
 pub async fn copy_bidirectional<A, B>(a: &mut A, b: &mut B) -> io::Result<(u64, u64)>
 where

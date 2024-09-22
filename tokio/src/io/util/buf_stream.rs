@@ -8,6 +8,7 @@ use std::task::{Context, Poll};
 
 pin_project! {
     /// Wraps a type that is [`AsyncWrite`] and [`AsyncRead`], and buffers its input and output.
+    /// 包装 [`AsyncWrite`] 和 [`AsyncRead`] 类型,并缓冲其输入和输出.
     ///
     /// It can be excessively inefficient to work directly with something that implements [`AsyncWrite`]
     /// and [`AsyncRead`]. For example, every `write`, however small, has to traverse the syscall
@@ -87,6 +88,7 @@ impl<RW> From<BufReader<BufWriter<RW>>> for BufStream<RW> {
 impl<RW> From<BufWriter<BufReader<RW>>> for BufStream<RW> {
     fn from(b: BufWriter<BufReader<RW>>) -> Self {
         // we need to "invert" the reader and writer
+        // 我们需要`反转`读者和写者
         let BufWriter {
             inner:
                 BufReader {

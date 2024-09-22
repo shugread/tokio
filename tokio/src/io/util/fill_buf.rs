@@ -9,6 +9,7 @@ use std::task::{Context, Poll};
 
 pin_project! {
     /// Future for the [`fill_buf`](crate::io::AsyncBufReadExt::fill_buf) method.
+    /// 用于 [`fill_buf`](super::AsyncReadExt::fill_buf) 方法的流.
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct FillBuf<'a, R: ?Sized> {

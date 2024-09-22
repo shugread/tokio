@@ -14,6 +14,7 @@ cfg_io_util! {
     ///
     /// This is an asynchronous version of [`std::io::Sink`][std].
     ///
+    /// 一个异步写入器,它将把数据移入空白处.
     /// [sink]: sink()
     /// [std]: std::io::Sink
     pub struct Sink {

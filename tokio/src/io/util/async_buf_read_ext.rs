@@ -7,6 +7,7 @@ use crate::io::AsyncBufRead;
 
 cfg_io_util! {
     /// An extension trait which adds utility methods to [`AsyncBufRead`] types.
+    /// 向 [`AsyncBufRead`] 类型添加实用方法的扩展特征.
     ///
     /// [`AsyncBufRead`]: crate::io::AsyncBufRead
     pub trait AsyncBufReadExt: AsyncBufRead {
@@ -93,6 +94,7 @@ cfg_io_util! {
         ///     assert_eq!(buf, b"");
         /// }
         /// ```
+        /// 将所有字节读入`buf`,直到达到分隔符`byte`或EOF.
         fn read_until<'a>(&'a mut self, byte: u8, buf: &'a mut Vec<u8>) -> ReadUntil<'a, Self>
         where
             Self: Unpin,
@@ -196,6 +198,7 @@ cfg_io_util! {
         ///     assert_eq!(buf, "");
         /// }
         /// ```
+        /// 读取所有字节直到到达换行符(0xA 字节),并将它们附加到提供的缓冲区.
         fn read_line<'a>(&'a mut self, buf: &'a mut String) -> ReadLine<'a, Self>
         where
             Self: Unpin,
@@ -237,6 +240,7 @@ cfg_io_util! {
         /// # Ok(())
         /// # }
         /// ```
+        /// 返回按字节`byte`分割的此读取器内容流.
         fn split(self, byte: u8) -> Split<Self>
         where
             Self: Sized + Unpin,
@@ -274,6 +278,7 @@ cfg_io_util! {
         /// completes first, then it is guaranteed that no data was read.
         ///
         /// [`consume`]: crate::io::AsyncBufReadExt::consume
+        /// 返回内部缓冲区的内容,如果缓冲区为空,则用内部读取器中的更多数据填充它.
         fn fill_buf(&mut self) -> FillBuf<'_, Self>
         where
             Self: Unpin,
@@ -296,6 +301,7 @@ cfg_io_util! {
         ///
         /// [`read`]: crate::io::AsyncReadExt::read
         /// [`fill_buf`]: crate::io::AsyncBufReadExt::fill_buf
+        /// 告诉此缓冲区,缓冲区中的`amt`字节已被消耗,因此它们不应再在对[`read`]的调用中返回.
         fn consume(&mut self, amt: usize)
         where
             Self: Unpin,
@@ -345,6 +351,7 @@ cfg_io_util! {
         /// ```
         ///
         /// [`AsyncBufReadExt::read_line`]: AsyncBufReadExt::read_line
+        /// 返回按行分割的流
         fn lines(self) -> Lines<Self>
         where
             Self: Sized,

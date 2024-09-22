@@ -12,11 +12,13 @@ cfg_io_util! {
     /// see the documentation of `copy_buf()` for more details.
     ///
     /// [copy_buf]: copy_buf()
+    /// 将读取器的全部内容异步复制到写入器中的Future
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     struct CopyBuf<'a, R: ?Sized, W: ?Sized> {
         reader: &'a mut R,
         writer: &'a mut W,
+        // 复制数据的数量
         amt: u64,
     }
 
@@ -82,10 +84,12 @@ where
             let me = &mut *self;
             let buffer = ready!(Pin::new(&mut *me.reader).poll_fill_buf(cx))?;
             if buffer.is_empty() {
+                // 读取完成
                 ready!(Pin::new(&mut self.writer).poll_flush(cx))?;
                 return Poll::Ready(Ok(self.amt));
             }
 
+            // 写入数据
             let i = ready!(Pin::new(&mut *me.writer).poll_write(cx, buffer))?;
             if i == 0 {
                 return Poll::Ready(Err(std::io::ErrorKind::WriteZero.into()));

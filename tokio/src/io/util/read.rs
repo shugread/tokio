@@ -13,6 +13,7 @@ use std::task::{ready, Context, Poll};
 ///
 /// The returned future will resolve to both the I/O stream and the buffer
 /// as well as the number of bytes read once the read operation is completed.
+/// 尝试以异步方式将一些字节直接读入给定的`buf`,并返回未来类型.
 pub(crate) fn read<'a, R>(reader: &'a mut R, buf: &'a mut [u8]) -> Read<'a, R>
 where
     R: AsyncRead + Unpin + ?Sized,

@@ -16,6 +16,7 @@ const ERROR: usize = 0b10_0000;
 /// Describes the readiness state of an I/O resources.
 ///
 /// `Ready` tracks which operation an I/O resource is ready to perform.
+/// 描述 I/O 资源的就绪状态
 #[cfg_attr(docsrs, doc(cfg(feature = "net")))]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Ready(usize);

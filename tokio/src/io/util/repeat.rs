@@ -16,6 +16,7 @@ cfg_io_util! {
     ///
     /// [repeat]: fn@repeat
     /// [std]: std::io::Repeat
+    /// 一个异步读取器一遍又一遍地产生一个字节
     #[derive(Debug)]
     pub struct Repeat {
         byte: u8,

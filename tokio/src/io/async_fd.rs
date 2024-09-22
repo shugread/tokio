@@ -9,6 +9,29 @@ use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::task::{ready, Context, Poll};
 
+/// 将由 Unix 文件描述符支持的 IO 对象与 tokio 反应器关联,以便轮询就绪状态.
+/// 文件描述符必须是可以与 OS 轮询工具（即 `poll`,`epoll`,`kqueue` 等）一起使用的类型,
+/// 例如网络套接字或管道,并且文件描述符必须将非阻塞模式设置为 true.
+///
+/// 创建 [`AsyncFd`] 会将文件描述符注册到当前 tokio Reactor,这样您就可以直接等待文件描述符可读或可写.
+/// 一旦注册,文件描述符将保持注册状态,直到 [`AsyncFd`] 被删除.
+///
+/// [`AsyncFd`] 拥有任意对象的所有权来表示 IO 对象.该对象旨在处理文件描述符
+/// 被删除时的关闭,避免资源泄漏并确保 [`AsyncFd`] 可以在关闭文件描述符之前
+/// 清理注册。[`AsyncFd::into_inner`] 函数可用于提取内部对象以从 tokio IO 反应器
+/// 重新夺回控制权.
+///
+/// 内部对象需要实现 [`AsRawFd`].当 [`AsyncFd`] 拥有内部对象时,此文件描述符不得更改,
+/// 即内部类型的 [`AsRawFd::as_raw_fd`] 方法在多次调用时必须始终返回相同的文件描述符.
+/// 不遵守这一点会导致 IO 驱动程序中出现未指定的行为,其中可能包括中断其他套接字/等的通知.
+///
+/// 通过调用异步函数 [`readable`] 和 [`writable`] 来轮询就绪情况.
+/// 当观察到相关的就绪条件时,这些函数完成.任意数量的任务都可以在相同或不同的条件下并行查询同一个 `AsyncFd`.
+///
+/// 在某些平台上,就绪检测机制依赖于边缘触发通知.这意味着操作系统只会在文件描述符从未就绪
+/// 转换为就绪时通知 Tokio.要使其正常工作,您应该首先尝试读取或写入,
+/// 并且仅在失败并出现 [`std::io::ErrorKind::WouldBlock`] 错误时才轮询就绪情况.
+///
 /// Associates an IO object backed by a Unix file descriptor with the tokio
 /// reactor, allowing for readiness to be polled. The file descriptor must be of
 /// a type that can be used with the OS polling facilities (ie, `poll`, `epoll`,
@@ -179,6 +202,7 @@ pub struct AsyncFd<T: AsRawFd> {
     registration: Registration,
     // The inner value is always present. the Option is required for `drop` and `into_inner`.
     // In all other methods `unwrap` is valid, and will never panic.
+    // 内部值始终存在
     inner: Option<T>,
 }
 
@@ -187,6 +211,7 @@ pub struct AsyncFd<T: AsRawFd> {
 /// that you do not forget to explicitly clear (or not clear) the event.
 ///
 /// This type exposes an immutable reference to the underlying IO object.
+/// 此类型公开对底层 IO 对象的不可变引用.
 #[must_use = "You must explicitly choose whether to clear the readiness state by calling a method on ReadyGuard"]
 pub struct AsyncFdReadyGuard<'a, T: AsRawFd> {
     async_fd: &'a AsyncFd<T>,
@@ -198,6 +223,7 @@ pub struct AsyncFdReadyGuard<'a, T: AsRawFd> {
 /// that you do not forget to explicitly clear (or not clear) the event.
 ///
 /// This type exposes a mutable reference to the underlying IO object.
+/// 此类型公开对底层 IO 对象的可变引用.
 #[must_use = "You must explicitly choose whether to clear the readiness state by calling a method on ReadyGuard"]
 pub struct AsyncFdReadyMutGuard<'a, T: AsRawFd> {
     async_fd: &'a mut AsyncFd<T>,
@@ -298,6 +324,7 @@ impl<T: AsRawFd> AsyncFd<T> {
         Self::try_new_with_handle_and_interest(inner, scheduler::Handle::current(), interest)
     }
 
+    // 实际注册函数
     #[track_caller]
     pub(crate) fn try_new_with_handle_and_interest(
         inner: T,
@@ -306,6 +333,7 @@ impl<T: AsRawFd> AsyncFd<T> {
     ) -> Result<Self, AsyncFdTryNewError<T>> {
         let fd = inner.as_raw_fd();
 
+        // 注册io
         match Registration::new_with_interest_and_handle(&mut SourceFd(&fd), interest, handle) {
             Ok(registration) => Ok(AsyncFd {
                 registration,
@@ -327,6 +355,7 @@ impl<T: AsRawFd> AsyncFd<T> {
         self.inner.as_mut().unwrap()
     }
 
+    // 获取inner, 并且取消注册的io
     fn take_inner(&mut self) -> Option<T> {
         let inner = self.inner.take()?;
         let fd = inner.as_raw_fd();
@@ -373,6 +402,7 @@ impl<T: AsRawFd> AsyncFd<T> {
         &'a self,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<AsyncFdReadyGuard<'a, T>>> {
+        // 检测读就绪
         let event = ready!(self.registration.poll_read_ready(cx))?;
 
         Poll::Ready(Ok(AsyncFdReadyGuard {
@@ -406,6 +436,7 @@ impl<T: AsRawFd> AsyncFd<T> {
     /// [`Context`]: struct@std::task::Context
     /// [`Waker`]: struct@std::task::Waker
     /// [`Waker::wake`]: method@std::task::Waker::wake
+    /// 检测读就绪
     pub fn poll_read_ready_mut<'a>(
         &'a mut self,
         cx: &mut Context<'_>,
@@ -445,6 +476,7 @@ impl<T: AsRawFd> AsyncFd<T> {
     /// [`Context`]: struct@std::task::Context
     /// [`Waker`]: struct@std::task::Waker
     /// [`Waker::wake`]: method@std::task::Waker::wake
+    /// 检测写就绪
     pub fn poll_write_ready<'a>(
         &'a self,
         cx: &mut Context<'_>,
@@ -482,6 +514,7 @@ impl<T: AsRawFd> AsyncFd<T> {
     /// [`Context`]: struct@std::task::Context
     /// [`Waker`]: struct@std::task::Waker
     /// [`Waker::wake`]: method@std::task::Waker::wake
+    /// 检测写就绪
     pub fn poll_write_ready_mut<'a>(
         &'a mut self,
         cx: &mut Context<'_>,
@@ -583,6 +616,7 @@ impl<T: AsRawFd> AsyncFd<T> {
     ///     }
     /// }
     /// ```
+    /// 检测事件就绪
     pub async fn ready(&self, interest: Interest) -> io::Result<AsyncFdReadyGuard<'_, T>> {
         let event = self.registration.readiness(interest).await?;
 
@@ -699,6 +733,7 @@ impl<T: AsRawFd> AsyncFd<T> {
     /// concurrently with other methods on this struct. This method only
     /// provides shared access to the inner IO resource when handling the
     /// [`AsyncFdReadyGuard`].
+    /// 可读事件就绪
     #[allow(clippy::needless_lifetimes)] // The lifetime improves rustdoc rendering.
     pub async fn readable<'a>(&'a self) -> io::Result<AsyncFdReadyGuard<'a, T>> {
         self.ready(Interest::READABLE).await
@@ -724,6 +759,7 @@ impl<T: AsRawFd> AsyncFd<T> {
     /// provides shared access to the inner IO resource when handling the
     /// [`AsyncFdReadyGuard`].
     #[allow(clippy::needless_lifetimes)] // The lifetime improves rustdoc rendering.
+                                         // 写事件就绪
     pub async fn writable<'a>(&'a self) -> io::Result<AsyncFdReadyGuard<'a, T>> {
         self.ready(Interest::WRITABLE).await
     }
@@ -816,6 +852,7 @@ impl<T: AsRawFd> AsyncFd<T> {
     ///
     /// [`try_io`]: AsyncFdReadyGuard::try_io
     /// [`WouldBlock`]: std::io::ErrorKind::WouldBlock
+    /// 事件就绪时触发调用
     pub async fn async_io<R>(
         &self,
         interest: Interest,
@@ -865,6 +902,7 @@ impl<T: std::fmt::Debug + AsRawFd> std::fmt::Debug for AsyncFd<T> {
 
 impl<T: AsRawFd> Drop for AsyncFd<T> {
     fn drop(&mut self) {
+        // 移除注册
         let _ = self.take_inner();
     }
 }
@@ -885,6 +923,7 @@ impl<'a, Inner: AsRawFd> AsyncFdReadyGuard<'a, Inner> {
     /// This method only clears readiness events that happened before the creation of this guard.
     /// In other words, if the IO resource becomes ready between the creation of the guard and
     /// this call to `clear_ready`, then the readiness is not actually cleared.
+    /// 清除就绪状态
     pub fn clear_ready(&mut self) {
         if let Some(event) = self.event.take() {
             self.async_fd.registration.clear_readiness(event);
@@ -974,6 +1013,7 @@ impl<'a, Inner: AsRawFd> AsyncFdReadyGuard<'a, Inner> {
     ///     }
     /// }
     /// ```
+    /// 仅清除ready的位
     pub fn clear_ready_matching(&mut self, ready: Ready) {
         if let Some(mut event) = self.event.take() {
             self.async_fd
@@ -1005,6 +1045,7 @@ impl<'a, Inner: AsRawFd> AsyncFdReadyGuard<'a, Inner> {
     /// the guard.
     ///
     /// [`Ready`]: crate::io::Ready
+    /// 就绪状态
     pub fn ready(&self) -> Ready {
         match &self.event {
             Some(event) => event.ready,
@@ -1066,6 +1107,7 @@ impl<'a, Inner: AsRawFd> AsyncFdReadyGuard<'a, Inner> {
     ///
     /// [`WouldBlock`]: std::io::ErrorKind::WouldBlock
     // Alias for old name in 0.x
+    //  执行提供的 IO 操作.
     #[cfg_attr(docsrs, doc(alias = "with_io"))]
     pub fn try_io<R>(
         &mut self,
@@ -1109,6 +1151,7 @@ impl<'a, Inner: AsRawFd> AsyncFdReadyMutGuard<'a, Inner> {
     /// This method only clears readiness events that happened before the creation of this guard.
     /// In other words, if the IO resource becomes ready between the creation of the guard and
     /// this call to `clear_ready`, then the readiness is not actually cleared.
+    /// 清除状态
     pub fn clear_ready(&mut self) {
         if let Some(event) = self.event.take() {
             self.async_fd.registration.clear_readiness(event);

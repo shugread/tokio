@@ -8,6 +8,7 @@ use std::task::{Context, Poll};
 
 /// Join two values implementing `AsyncRead` and `AsyncWrite` into a
 /// single handle.
+/// 将两个实现 `AsyncRead` 和 `AsyncWrite` 的值合并为一个句柄.
 pub fn join<R, W>(reader: R, writer: W) -> Join<R, W>
 where
     R: AsyncRead,

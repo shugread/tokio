@@ -8,6 +8,7 @@ use std::task::{Context, Poll};
 /// That's why, wrapped writer will always receive well-formed utf-8 bytes.
 /// # Other platforms
 /// Passes data to `inner` as is.
+/// Windows 平台上处理 UTF-8 字符串的边界问题
 #[derive(Debug)]
 pub(crate) struct SplitByUtf8BoundaryIfWindows<W> {
     inner: W,
@@ -20,9 +21,11 @@ impl<W> SplitByUtf8BoundaryIfWindows<W> {
 }
 
 // this constant is defined by Unicode standard.
+// 一个 UTF-8 字符最多的字节数
 const MAX_BYTES_PER_CHAR: usize = 4;
 
 // Subject for tweaking here
+//  UTF-8 字符时检查的字节数
 const MAGIC_CONST: usize = 8;
 
 impl<W> crate::io::AsyncWrite for SplitByUtf8BoundaryIfWindows<W>
@@ -48,6 +51,7 @@ where
         if cfg!(not(any(target_os = "windows", test)))
             || buf.len() <= crate::io::blocking::DEFAULT_MAX_BUF_SIZE
         {
+            // 不是windows平台或者buf长度不超过DEFAULT_MAX_BUF_SIZE
             return call_inner(buf);
         }
 
@@ -65,6 +69,7 @@ where
         // if they are (possibly incomplete) utf8, then we can be quite sure
         // that input buffer was utf8.
 
+        // 如果缓冲区前面是UTF-8的字符,则需要移除不完整的 UTF-8 字符
         let have_to_fix_up = match std::str::from_utf8(&buf[..MAX_BYTES_PER_CHAR * MAGIC_CONST]) {
             Ok(_) => true,
             Err(err) => {
@@ -78,13 +83,15 @@ where
             // character. To achieve it, we exploit UTF8 encoding:
             // for any code point, all bytes except first start with 0b10 prefix.
             // see https://en.wikipedia.org/wiki/UTF-8#Encoding for details
+            // 弹出末尾的几个字节
             let trailing_incomplete_char_size = buf
                 .iter()
-                .rev()
-                .take(MAX_BYTES_PER_CHAR)
-                .position(|byte| *byte < 0b1000_0000 || *byte >= 0b1100_0000)
+                .rev() // 迭代器反向
+                .take(MAX_BYTES_PER_CHAR) // 获取MAX_BYTES_PER_CHAR个字节
+                .position(|byte| *byte < 0b1000_0000 || *byte >= 0b1100_0000) // 查找第一个UTF-8字节
                 .unwrap_or(0)
                 + 1;
+            // 修改buf
             buf = &buf[..buf.len() - trailing_incomplete_char_size];
         }
 
