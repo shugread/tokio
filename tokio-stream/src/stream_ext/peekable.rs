@@ -9,6 +9,7 @@ use crate::StreamExt;
 
 pin_project! {
     /// Stream returned by the [`chain`](super::StreamExt::peekable) method.
+    /// [`peekable`](super::StreamExt::peekable) 方法的Future.
     pub struct Peekable<T: Stream> {
         peek: Option<T::Item>,
         #[pin]

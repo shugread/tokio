@@ -7,6 +7,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Stream returned by the [`chain`](super::StreamExt::chain) method.
+    /// [`chain`](super::StreamExt::chain) 方法的Future.
     pub struct Chain<T, U> {
         #[pin]
         a: Fuse<T>,
@@ -37,6 +38,7 @@ where
 
         let me = self.project();
 
+        // 先获取a的元素
         if let Some(v) = ready!(me.a.poll_next(cx)) {
             return Ready(Some(v));
         }

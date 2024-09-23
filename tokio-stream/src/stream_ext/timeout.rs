@@ -11,6 +11,7 @@ use std::time::Duration;
 
 pin_project! {
     /// Stream returned by the [`timeout`](super::StreamExt::timeout) method.
+    /// [`timeout`](super::StreamExt::timeout) 方法的Future.
     #[must_use = "streams do nothing unless polled"]
     #[derive(Debug)]
     pub struct Timeout<S> {
@@ -62,6 +63,7 @@ impl<S: Stream> Stream for Timeout<S> {
         if *me.poll_deadline {
             ready!(me.deadline.poll(cx));
             *me.poll_deadline = false;
+            // 超时退出
             return Poll::Ready(Some(Err(Elapsed::new())));
         }
 

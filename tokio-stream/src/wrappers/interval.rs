@@ -7,6 +7,7 @@ use tokio::time::{Instant, Interval};
 ///
 /// [`Interval`]: struct@tokio::time::Interval
 /// [`Stream`]: trait@crate::Stream
+/// 围绕 [`Interval`] 的包装器,实现 [`Stream`].
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
 pub struct IntervalStream {

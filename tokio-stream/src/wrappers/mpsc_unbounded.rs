@@ -7,6 +7,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 ///
 /// [`tokio::sync::mpsc::UnboundedReceiver`]: struct@tokio::sync::mpsc::UnboundedReceiver
 /// [`Stream`]: trait@crate::Stream
+/// 围绕 [`tokio::sync::mpsc::UnboundedReceiver`] 的包装器,实现 [`Stream`].
 #[derive(Debug)]
 pub struct UnboundedReceiverStream<T> {
     inner: UnboundedReceiver<T>,

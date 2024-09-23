@@ -103,6 +103,7 @@ cfg_time! {
 /// [`Stream`]: crate::Stream
 /// [futures]: https://docs.rs/futures
 /// [futures-StreamExt]: https://docs.rs/futures/0.3/futures/stream/trait.StreamExt.html
+/// [`Stream`] 特征的扩展特征,提供各种便捷的组合函数.
 pub trait StreamExt: Stream {
     /// Consumes and returns the next value in the stream or `None` if the
     /// stream is finished.
@@ -141,6 +142,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(stream.next().await, None);
     /// # }
     /// ```
+    /// 使用并返回流中的下一个值,如果流已完成则返回`None`.
     fn next(&mut self) -> Next<'_, Self>
     where
         Self: Unpin,
@@ -182,6 +184,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(stream.try_next().await, Err("nope"));
     /// # }
     /// ```
+    /// 使用并返回流中的下一个元素。如果在下一个元素之前遇到错误,则返回错误.
     fn try_next<T, E>(&mut self) -> TryNext<'_, Self>
     where
         Self: Stream<Item = Result<T, E>> + Unpin,
@@ -215,6 +218,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(stream.next().await, Some(6));
     /// # }
     /// ```
+    /// 将此流的元素映射到不同类型,返回结果类型的新流.
     fn map<T, F>(self, f: F) -> Map<Self, F>
     where
         F: FnMut(Self::Item) -> T,
@@ -257,6 +261,8 @@ pub trait StreamExt: Stream {
     /// assert_eq!(stream.next().await, None);
     /// # }
     /// ```
+    /// 将此流的元素映射到不同的类型,流的结束由提供的闭包决定.
+    /// 将返回目标类型的流,它将产生元素,直到闭包返回`None`.
     fn map_while<T, F>(self, f: F) -> MapWhile<Self, F>
     where
         F: FnMut(Self::Item) -> Option<T>,
@@ -301,6 +307,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(stream.next().await, Some(6));
     /// # }
     /// ```
+    /// 将此流的元素异步映射到不同类型,并返回结果类型的新流.
     fn then<F, Fut>(self, f: F) -> Then<Self, Fut, F>
     where
         F: FnMut(Self::Item) -> Fut,
@@ -394,6 +401,7 @@ pub trait StreamExt: Stream {
     ///    assert!(rx.next().await.is_none());
     /// }
     /// ```
+    /// 通过在生成时交错两个流的输出来将两个流合并为一个.
     fn merge<U>(self, other: U) -> Merge<Self, U>
     where
         U: Stream<Item = Self::Item>,
@@ -432,6 +440,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(None, evens.next().await);
     /// # }
     /// ```
+    /// 根据提供的闭包过滤此流产生的值.
     fn filter<F>(self, f: F) -> Filter<Self, F>
     where
         F: FnMut(&Self::Item) -> bool,
@@ -470,6 +479,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(None, evens.next().await);
     /// # }
     /// ```
+    /// 过滤此流产生的值,同时根据提供的闭包将它们映射到不同的类型.
     fn filter_map<T, F>(self, f: F) -> FilterMap<Self, F>
     where
         F: FnMut(Self::Item) -> Option<T>,
@@ -536,6 +546,7 @@ pub trait StreamExt: Stream {
     ///     assert_eq!(stream.next().await, None);
     /// }
     /// ```
+    /// 创建一个在第一个`None`之后结束的流.
     fn fuse(self) -> Fuse<Self>
     where
         Self: Sized,
@@ -563,6 +574,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(None, stream.next().await);
     /// # }
     /// ```
+    /// 创建最多包含基础流中的`n`个项目的新流.
     fn take(self, n: usize) -> Take<Self>
     where
         Self: Sized,
@@ -592,6 +604,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(None, stream.next().await);
     /// # }
     /// ```
+    /// 当提供的闭包返回为`true`时,从此流中获取元素.
     fn take_while<F>(self, f: F) -> TakeWhile<Self, F>
     where
         F: FnMut(&Self::Item) -> bool,
@@ -618,6 +631,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(None, stream.next().await);
     /// # }
     /// ```
+    /// 创建一个新的流,它将跳过底层流的前 `n` 个项目.
     fn skip(self, n: usize) -> Skip<Self>
     where
         Self: Sized,
@@ -648,6 +662,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(None, stream.next().await);
     /// # }
     /// ```
+    /// 当提供的闭包返回为`true`时,跳过底层流中的元素.
     fn skip_while<F>(self, f: F) -> SkipWhile<Self, F>
     where
         F: FnMut(&Self::Item) -> bool,
@@ -709,6 +724,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(iter.next().await, Some(&3));
     /// # }
     /// ```
+    /// 测试流的每个元素是否与闭包匹配.
     fn all<F>(&mut self, f: F) -> AllFuture<'_, Self, F>
     where
         Self: Unpin,
@@ -768,6 +784,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(iter.next().await, Some(&2));
     /// # }
     /// ```
+    /// 测试流的任意元素是否与闭包匹配.
     fn any<F>(&mut self, f: F) -> AnyFuture<'_, Self, F>
     where
         Self: Unpin,
@@ -803,6 +820,7 @@ pub trait StreamExt: Stream {
     ///     assert_eq!(stream.next().await, None);
     /// }
     /// ```
+    /// 首先返回第一个流中的所有值,然后返回第二个流中的所有值,将两个流合并为一个.
     fn chain<U>(self, other: U) -> Chain<Self, U>
     where
         U: Stream<Item = Self::Item>,
@@ -833,6 +851,7 @@ pub trait StreamExt: Stream {
     /// assert_eq!(sum, 6);
     /// # }
     /// ```
+    /// 将函数应用于流中的每个元素并生成单个最终值的组合器.
     fn fold<B, F>(self, init: B, f: F) -> FoldFuture<Self, B, F>
     where
         Self: Sized,
@@ -912,6 +931,7 @@ pub trait StreamExt: Stream {
     ///     assert_eq!(Err("no"), values);
     /// }
     /// ```
+    /// 将所有发出的值推送到集合中.
     fn collect<T>(self) -> Collect<Self, T>
     where
         T: FromStream<Self::Item>,
@@ -996,6 +1016,7 @@ pub trait StreamExt: Stream {
     /// assert!(timeout_stream.try_next().await.is_ok(), "expected no more timeouts");
     /// # }
     /// ```
+    /// 对传递的流应用每个元素的超时.
     #[cfg(feature = "time")]
     #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
     fn timeout(self, duration: Duration) -> Timeout<Self>
@@ -1084,6 +1105,7 @@ pub trait StreamExt: Stream {
     /// assert!(timeout_stream.try_next().await.is_ok(), "expected non-timeout");
     /// # }
     /// ```
+    /// 对传递的流应用每个元素的超时.
     #[cfg(feature = "time")]
     #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
     fn timeout_repeating(self, interval: Interval) -> TimeoutRepeating<Self>
@@ -1114,6 +1136,7 @@ pub trait StreamExt: Stream {
     /// }
     /// # }
     /// ```
+    /// 通过强制元素之间的延迟来减慢流的速度.
     #[cfg(feature = "time")]
     #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
     fn throttle(self, duration: Duration) -> Throttle<Self>
@@ -1169,6 +1192,7 @@ pub trait StreamExt: Stream {
     ///     assert_eq!(chunk_stream.next().await, Some(vec![5]));
     /// }
     /// ```
+    /// 使用每个批次的最大持续时间和大小对给定流中的元素进行批处理.
     #[cfg(feature = "time")]
     #[cfg_attr(docsrs, doc(cfg(feature = "time")))]
     #[track_caller]
@@ -1198,6 +1222,7 @@ pub trait StreamExt: Stream {
     ///     assert_eq!(*stream.peek().await.unwrap(), 2);
     /// }
     /// ```
+    /// 将流转换为可窥视流,其下一个元素可以被窥视而不会被使用.
     fn peekable(self) -> Peekable<Self>
     where
         Self: Sized,
@@ -1209,6 +1234,7 @@ pub trait StreamExt: Stream {
 impl<St: ?Sized> StreamExt for St where St: Stream {}
 
 /// Merge the size hints from two streams.
+/// 合并来自两个流的大小提示.
 fn merge_size_hints(
     (left_low, left_high): (usize, Option<usize>),
     (right_low, right_high): (usize, Option<usize>),

@@ -7,6 +7,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Stream for the [`map_while`](super::StreamExt::map_while) method.
+    /// [`map_while`](super::StreamExt::map_while) 方法的Future.
     #[must_use = "streams do nothing unless polled"]
     pub struct MapWhile<St, F> {
         #[pin]

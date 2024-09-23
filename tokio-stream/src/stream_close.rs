@@ -32,6 +32,7 @@ pin_project! {
     ///     }
     /// }
     /// ```
+    /// 将值包装在`Option`中的`Stream`.
     #[must_use = "streams do nothing unless polled"]
     pub struct StreamNotifyClose<S> {
         #[pin]

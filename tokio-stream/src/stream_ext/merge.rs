@@ -7,12 +7,14 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Stream returned by the [`merge`](super::StreamExt::merge) method.
+    /// [`merge`](super::StreamExt::merge) 方法的Future.
     pub struct Merge<T, U> {
         #[pin]
         a: Fuse<T>,
         #[pin]
         b: Fuse<U>,
         // When `true`, poll `a` first, otherwise, `poll` b`.
+        // 当为 `true` 时,首先轮询 `a`,否则,轮询 `b`.
         a_first: bool,
     }
 }

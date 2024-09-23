@@ -7,6 +7,7 @@ use tokio::signal::windows::{CtrlBreak, CtrlC};
 ///
 /// [`CtrlC`]: struct@tokio::signal::windows::CtrlC
 /// [`Stream`]: trait@crate::Stream
+/// 围绕 [`CtrlC`] 的包装器,实现 [`Stream`].
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(all(windows, feature = "signal"))))]
 pub struct CtrlCStream {
@@ -49,6 +50,7 @@ impl AsMut<CtrlC> for CtrlCStream {
 ///
 /// [`CtrlBreak`]: struct@tokio::signal::windows::CtrlBreak
 /// [`Stream`]: trait@crate::Stream
+/// 围绕 [`CtrlBreak`] 的包装器,实现 [`Stream`].
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(all(windows, feature = "signal"))))]
 pub struct CtrlBreakStream {

@@ -33,6 +33,7 @@ unsafe impl<T> Sync for Empty<T> {}
 ///     assert_eq!(None, none.next().await);
 /// }
 /// ```
+/// 创建一个不产生任何结果的流.
 pub const fn empty<T>() -> Empty<T> {
     Empty(PhantomData)
 }

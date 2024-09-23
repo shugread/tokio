@@ -24,6 +24,7 @@ where
 pin_project! {
     /// Stream for the [`throttle`](throttle) function. This object is `!Unpin`. If you need it to
     /// implement `Unpin` you can pin your throttle like this: `Box::pin(your_throttle)`.
+    /// [`throttle`](super::StreamExt::throlle) 方法的Future.
     #[derive(Debug)]
     #[must_use = "streams do nothing unless polled"]
     pub struct Throttle<T> {
@@ -73,13 +74,16 @@ impl<T: Stream> Stream for Throttle<T> {
         let dur = *me.duration;
 
         if !*me.has_delayed && !is_zero(dur) {
+            // 延时
             ready!(me.delay.as_mut().poll(cx));
             *me.has_delayed = true;
         }
 
+        // 获取元素
         let value = ready!(me.stream.poll_next(cx));
 
         if value.is_some() {
+            // 重新设置延时
             if !is_zero(dur) {
                 me.delay.reset(Instant::now() + dur);
             }

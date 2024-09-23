@@ -7,6 +7,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Stream for the [`skip_while`](super::StreamExt::skip_while) method.
+    /// [`skip_while`](super::StreamExt::skip_while) 方法的Future.
     #[must_use = "streams do nothing unless polled"]
     pub struct SkipWhile<St, F> {
         #[pin]

@@ -8,6 +8,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Stream for the [`then`](super::StreamExt::then) method.
+    /// [`then`](super::StreamExt::then) 方法的Future.
     #[must_use = "streams do nothing unless polled"]
     pub struct Then<St, Fut, F> {
         #[pin]

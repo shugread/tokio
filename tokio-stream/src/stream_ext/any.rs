@@ -8,6 +8,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Future for the [`any`](super::StreamExt::any) method.
+    /// [`any`](super::StreamExt::any) 方法的Future.
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct AnyFuture<'a, St: ?Sized, F> {

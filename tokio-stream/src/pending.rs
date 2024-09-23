@@ -37,6 +37,7 @@ unsafe impl<T> Sync for Pending<T> {}
 ///     unreachable!();
 /// }
 /// ```
+/// 创建一个永远不准备就绪的流
 pub const fn pending<T>() -> Pending<T> {
     Pending(PhantomData)
 }

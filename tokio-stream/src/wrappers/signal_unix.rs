@@ -7,6 +7,7 @@ use tokio::signal::unix::Signal;
 ///
 /// [`Signal`]: struct@tokio::signal::unix::Signal
 /// [`Stream`]: trait@crate::Stream
+/// 围绕 [`Signal`] 的包装器,实现 [`Stream`].
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "signal"))))]
 pub struct SignalStream {

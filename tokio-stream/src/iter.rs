@@ -30,6 +30,7 @@ impl<I> Unpin for Iter<I> {}
 /// assert_eq!(stream.next().await, None);
 /// # }
 /// ```
+/// 将`Iterator`转换为`Stream`,随时准备产生下一个值.
 pub fn iter<I>(i: I) -> Iter<I::IntoIter>
 where
     I: IntoIterator,

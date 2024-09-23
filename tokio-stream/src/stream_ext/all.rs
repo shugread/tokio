@@ -8,6 +8,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Future for the [`all`](super::StreamExt::all) method.
+    /// [`all`](super::StreamExt::all) 方法的Future.
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct AllFuture<'a, St: ?Sized, F> {
@@ -41,6 +42,7 @@ where
         let mut stream = Pin::new(me.stream);
 
         // Take a maximum of 32 items from the stream before yielding.
+        // 在产生结果之前,从流中最多获取 32 个项目.
         for _ in 0..32 {
             match ready!(stream.as_mut().poll_next(cx)) {
                 Some(v) => {

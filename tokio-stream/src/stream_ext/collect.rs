@@ -10,6 +10,7 @@ use pin_project_lite::pin_project;
 // Do not export this struct until `FromStream` can be unsealed.
 pin_project! {
     /// Future returned by the [`collect`](super::StreamExt::collect) method.
+    /// [`collect`](super::StreamExt::collect) 方法的Future.
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     #[derive(Debug)]
     pub struct Collect<T, U>
@@ -75,6 +76,7 @@ where
                 }
             };
 
+            // 返回false,收集完成
             if !U::extend(sealed::Internal, me.collection, item) {
                 return Ready(U::finalize(sealed::Internal, me.collection));
             }
@@ -206,9 +208,11 @@ pub(crate) mod sealed {
         /// Intermediate type used during collection process
         ///
         /// The name of this type is internal and cannot be relied upon.
+        /// 收集过程中使用的中间类型
         type InternalCollection;
 
         /// Initialize the collection
+        /// 初始化集合
         fn initialize(
             internal: Internal,
             lower: usize,
@@ -218,9 +222,12 @@ pub(crate) mod sealed {
         /// Extend the collection with the received item
         ///
         /// Return `true` to continue streaming, `false` complete collection.
+        /// false表示完成收集
+        /// 使用收到的元素扩展集合
         fn extend(internal: Internal, collection: &mut Self::InternalCollection, item: T) -> bool;
 
         /// Finalize collection into target type.
+        /// 将集合最终确定为目标类型.
         fn finalize(internal: Internal, collection: &mut Self::InternalCollection) -> Self;
     }
 

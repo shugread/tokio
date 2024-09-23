@@ -7,6 +7,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Stream returned by the [`filter`](super::StreamExt::filter) method.
+    /// [`filter`](super::StreamExt::filter) 方法的Future.
     #[must_use = "streams do nothing unless polled"]
     pub struct Filter<St, F> {
         #[pin]

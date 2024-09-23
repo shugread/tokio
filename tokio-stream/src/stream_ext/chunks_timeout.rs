@@ -10,6 +10,7 @@ use std::time::Duration;
 
 pin_project! {
     /// Stream returned by the [`chunks_timeout`](super::StreamExt::chunks_timeout) method.
+    /// [`chunks_timeout`](super::StreamExt::chunks_timeout) 方法的Future.
     #[must_use = "streams do nothing unless polled"]
     #[derive(Debug)]
     pub struct ChunksTimeout<S: Stream> {
@@ -45,9 +46,11 @@ impl<S: Stream> Stream for ChunksTimeout<S> {
                 Poll::Pending => break,
                 Poll::Ready(Some(item)) => {
                     if me.items.is_empty() {
+                        // 设置休眠
                         me.deadline.set(Some(sleep(*me.duration)));
                         me.items.reserve_exact(*me.cap);
                     }
+                    // 插入元素
                     me.items.push(item);
                     if me.items.len() >= *me.cap {
                         return Poll::Ready(Some(std::mem::take(me.items)));
@@ -70,6 +73,7 @@ impl<S: Stream> Stream for ChunksTimeout<S> {
             if let Some(deadline) = me.deadline.as_pin_mut() {
                 ready!(deadline.poll(cx));
             }
+            // 超时
             return Poll::Ready(Some(std::mem::take(me.items)));
         }
 

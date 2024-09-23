@@ -10,6 +10,7 @@ pin_project! {
     ///
     /// [`tokio::io::Split`]: struct@tokio::io::Split
     /// [`Stream`]: trait@crate::Stream
+    /// 围绕 [`tokio::io::Split`] 的包装器,实现 [`Stream`].
     #[derive(Debug)]
     #[cfg_attr(docsrs, doc(cfg(feature = "io-util")))]
     pub struct SplitStream<R> {

@@ -9,6 +9,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Future for the [`try_next`](super::StreamExt::try_next) method.
+    /// [`try_next`](super::StreamExt::try_next) 方法的Future.
     ///
     /// # Cancel safety
     ///

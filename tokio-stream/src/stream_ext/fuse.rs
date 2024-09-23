@@ -6,6 +6,7 @@ use std::task::{ready, Context, Poll};
 
 pin_project! {
     /// Stream returned by [`fuse()`][super::StreamExt::fuse].
+    /// [`fuse`](super::StreamExt::fuse) 方法的Future.
     #[derive(Debug)]
     pub struct Fuse<T> {
         #[pin]

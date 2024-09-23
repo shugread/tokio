@@ -8,6 +8,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Future returned by the [`fold`](super::StreamExt::fold) method.
+    /// [`fold`](super::StreamExt::fold) 方法的Future.
     #[derive(Debug)]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     pub struct FoldFuture<St, B, F> {

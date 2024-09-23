@@ -33,6 +33,7 @@ impl<I> Unpin for Once<I> {}
 ///     assert_eq!(None, one.next().await);
 /// }
 /// ```
+/// 创建一个只发出一次元素的流.
 pub fn once<T>(value: T) -> Once<T> {
     Once {
         iter: crate::iter(Some(value)),

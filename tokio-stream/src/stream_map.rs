@@ -200,6 +200,7 @@ use std::task::{ready, Context, Poll};
 /// }
 /// ```
 
+/// 将多个流合并为一个,并使用唯一的键对每个源流进行索引.
 #[derive(Debug)]
 pub struct StreamMap<K, V> {
     /// Streams stored in the map
@@ -517,26 +518,33 @@ where
     V: Stream + Unpin,
 {
     /// Polls the next value, includes the vec entry index
+    /// 轮询下一个值和vec 条目索引
     fn poll_next_entry(&mut self, cx: &mut Context<'_>) -> Poll<Option<(usize, V::Item)>> {
+        // 生成随机数
         let start = self::rand::thread_rng_n(self.entries.len() as u32) as usize;
         let mut idx = start;
 
         for _ in 0..self.entries.len() {
+            // 随机轮询流
             let (_, stream) = &mut self.entries[idx];
 
             match Pin::new(stream).poll_next(cx) {
+                // 有值
                 Poll::Ready(Some(val)) => return Poll::Ready(Some((idx, val))),
                 Poll::Ready(None) => {
                     // Remove the entry
+                    // 流读取完成,移除流
                     self.entries.swap_remove(idx);
 
                     // Check if this was the last entry, if so the cursor needs
                     // to wrap
                     if idx == self.entries.len() {
+                        // 最后一个元素, 换行
                         idx = 0;
                     } else if idx < start && start <= self.entries.len() {
                         // The stream being swapped into the current index has
                         // already been polled, so skip it.
+                        // 被交换到当前索引的流已经被轮询过,因此跳过它.
                         idx = idx.wrapping_add(1) % self.entries.len();
                     }
                 }
@@ -581,6 +589,7 @@ where
     /// [`tokio::select!`](tokio::select) statement and some other branch
     /// completes first, it is guaranteed that no items were received on any of
     /// the underlying streams.
+    /// 轮询数据并将其添加到传入的 buffer 中.方法返回接收到的项的数量
     pub async fn next_many(&mut self, buffer: &mut Vec<(K, V::Item)>, limit: usize) -> usize {
         poll_fn(|cx| self.poll_next_many(cx, buffer, limit)).await
     }
@@ -597,12 +606,14 @@ where
     /// are received. Rather, if at least one item is available, it returns
     /// as many items as it can up to the given limit. This method returns
     /// zero only if the `StreamMap` is empty (or if `limit` is zero).
+    /// 轮询操作以获取多个项,直至达到指定的 limit 数量.
     pub fn poll_next_many(
         &mut self,
         cx: &mut Context<'_>,
         buffer: &mut Vec<(K, V::Item)>,
         limit: usize,
     ) -> Poll<usize> {
+        // 空数据,
         if limit == 0 || self.entries.is_empty() {
             return Poll::Ready(0);
         }
@@ -614,6 +625,7 @@ where
 
         while added < limit {
             // Indicates whether at least one stream returned a value when polled or not
+            // 指示轮询时是否至少有一个流返回值
             let mut should_loop = false;
 
             for _ in 0..self.entries.len() {
@@ -621,6 +633,7 @@ where
 
                 match Pin::new(stream).poll_next(cx) {
                     Poll::Ready(Some(val)) => {
+                        // 获取到值
                         added += 1;
 
                         let key = self.entries[idx].0.clone();
@@ -632,6 +645,7 @@ where
                     }
                     Poll::Ready(None) => {
                         // Remove the entry
+                        // 流结束,移除流
                         self.entries.swap_remove(idx);
 
                         // Check if this was the last entry, if so the cursor needs

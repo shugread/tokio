@@ -7,6 +7,7 @@ use tokio::sync::mpsc::Receiver;
 ///
 /// [`tokio::sync::mpsc::Receiver`]: struct@tokio::sync::mpsc::Receiver
 /// [`Stream`]: trait@crate::Stream
+/// 围绕 [`tokio::sync::mpsc::Receiver`] 的包装器,实现 [`Stream`].
 #[derive(Debug)]
 pub struct ReceiverStream<T> {
     inner: Receiver<T>,

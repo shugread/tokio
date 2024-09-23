@@ -8,6 +8,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Stream returned by the [`timeout_repeating`](super::StreamExt::timeout_repeating) method.
+    /// [`timeout_repeating`](super::StreamExt::timeout_repeating) 方法的Future.
     #[must_use = "streams do nothing unless polled"]
     #[derive(Debug)]
     pub struct TimeoutRepeating<S> {

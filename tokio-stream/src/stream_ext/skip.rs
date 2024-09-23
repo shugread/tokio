@@ -7,6 +7,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Stream for the [`skip`](super::StreamExt::skip) method.
+    /// [`skip`](super::StreamExt::skip) 方法的Future.
     #[must_use = "streams do nothing unless polled"]
     pub struct Skip<St> {
         #[pin]

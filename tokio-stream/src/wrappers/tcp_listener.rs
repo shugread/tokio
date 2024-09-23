@@ -8,6 +8,7 @@ use tokio::net::{TcpListener, TcpStream};
 ///
 /// [`TcpListener`]: struct@tokio::net::TcpListener
 /// [`Stream`]: trait@crate::Stream
+/// 围绕 [`TcpListener`] 的包装器,实现 [`Stream`].
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(feature = "net")))]
 pub struct TcpListenerStream {

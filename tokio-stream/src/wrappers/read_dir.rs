@@ -8,6 +8,7 @@ use tokio::fs::{DirEntry, ReadDir};
 ///
 /// [`tokio::fs::ReadDir`]: struct@tokio::fs::ReadDir
 /// [`Stream`]: trait@crate::Stream
+/// 围绕 [`tokio::fs::ReadDir`] 的包装器,实现 [`Stream`].
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(feature = "fs")))]
 pub struct ReadDirStream {

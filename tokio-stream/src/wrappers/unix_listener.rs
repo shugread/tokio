@@ -8,6 +8,7 @@ use tokio::net::{UnixListener, UnixStream};
 ///
 /// [`UnixListener`]: struct@tokio::net::UnixListener
 /// [`Stream`]: trait@crate::Stream
+/// 围绕 [`UnixListener`] 的包装器,实现 [`Stream`].
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "net"))))]
 pub struct UnixListenerStream {

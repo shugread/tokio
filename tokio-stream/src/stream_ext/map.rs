@@ -7,6 +7,7 @@ use pin_project_lite::pin_project;
 
 pin_project! {
     /// Stream for the [`map`](super::StreamExt::map) method.
+    /// [`map`](super::StreamExt::map) 方法的Future.
     #[must_use = "streams do nothing unless polled"]
     pub struct Map<St, F> {
         #[pin]
