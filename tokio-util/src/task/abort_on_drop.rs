@@ -13,6 +13,7 @@ use std::{
 /// which [aborts] the task when it is dropped.
 ///
 /// [aborts]: tokio::task::JoinHandle::abort
+/// 围绕 [`tokio::task::JoinHandle`] 的包装器,当任务被丢弃时,它会[中止]该任务.
 #[must_use = "Dropping the handle aborts the task immediately"]
 #[derive(Debug)]
 pub struct AbortOnDropHandle<T>(JoinHandle<T>);

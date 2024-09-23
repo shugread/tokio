@@ -26,6 +26,7 @@ pin_project! {
     /// [`AsyncRead`]: tokio::io::AsyncRead
     /// [`codec`]: crate::codec
     /// [`tokio_stream::StreamExt::next`]: https://docs.rs/tokio-stream/latest/tokio_stream/trait.StreamExt.html#method.next
+    /// 从 [`AsyncRead`] 解码的消息的 [`Stream`].
     pub struct FramedRead<T, D> {
         #[pin]
         inner: FramedImpl<T, D, ReadFrame>,

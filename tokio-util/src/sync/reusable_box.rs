@@ -10,6 +10,7 @@ use std::task::{Context, Poll};
 ///
 /// This type lets you replace the future stored in the box without
 /// reallocating when the size and alignment permits this.
+/// 可重复使用的 `Pin<Box<dyn Future<Output = T> + Send + 'a>>`.
 pub struct ReusableBoxFuture<'a, T> {
     boxed: Pin<Box<dyn Future<Output = T> + Send + 'a>>,
 }
@@ -29,6 +30,7 @@ impl<'a, T> ReusableBoxFuture<'a, T> {
     ///
     /// This reallocates if and only if the layout of the provided future is
     /// different from the layout of the currently stored future.
+    /// 替换当前存储Future.
     pub fn set<F>(&mut self, future: F)
     where
         F: Future<Output = T> + Send + 'a,
@@ -103,6 +105,7 @@ where
     F: FnOnce(Box<U>) -> O,
 {
     let layout = Layout::for_value::<T>(&*boxed);
+    // layout变化
     if layout != Layout::new::<U>() {
         return Err(new_value);
     }

@@ -3,6 +3,7 @@ use crate::time::wheel::Stack;
 use std::fmt;
 
 /// Wheel for a single level in the timer. This wheel contains 64 slots.
+/// 计时器中单个级别的轮子,此轮子包含 64 个槽.
 pub(crate) struct Level<T> {
     level: usize,
 

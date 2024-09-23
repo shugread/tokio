@@ -24,6 +24,8 @@ use core::task::{Context, Poll};
 //
 // TODO: replace this with an official solution once RFC #3336 or similar is available.
 // <https://github.com/rust-lang/rfcs/pull/3336>
+//
+// 一种包装类型，告诉编译器内容可能无效.
 #[repr(transparent)]
 pub(crate) struct MaybeDangling<T>(MaybeUninit<T>);
 

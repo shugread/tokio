@@ -415,22 +415,28 @@ use std::{cmp, fmt, mem};
 #[derive(Debug, Clone, Copy)]
 pub struct Builder {
     // Maximum frame length
+    // 最大帧长度
     max_frame_len: usize,
 
     // Number of bytes representing the field length
+    // 表示字段长度的字节数
     length_field_len: usize,
 
     // Number of bytes in the header before the length field
+    // 长度字段之前的头部字节数
     length_field_offset: usize,
 
     // Adjust the length specified in the header field by this amount
+    // 根据此量调整标头字段中指定的长度
     length_adjustment: isize,
 
     // Total number of bytes to skip before reading the payload, if not set,
     // `length_field_len + length_field_offset`
+    // 读取有效负载之前要跳过的总字节数,如果未设置,则为`length_field_len + length_field_offset`
     num_skip: Option<usize>,
 
     // Length field byte order (little or big endian)
+    // 长度字段字节顺序(小端或大端)
     length_field_is_big_endian: bool,
 }
 
@@ -447,6 +453,7 @@ pub struct LengthDelimitedCodecError {
 /// See [module level] documentation for more detail.
 ///
 /// [module level]: index.html
+/// 由帧头分隔的帧的编解码器,指定其长度.
 #[derive(Debug, Clone)]
 pub struct LengthDelimitedCodec {
     // Configuration values
@@ -503,6 +510,7 @@ impl LengthDelimitedCodec {
 
         if src.len() < head_len {
             // Not enough data
+            // 数据长度不够
             return Ok(None);
         }
 
@@ -510,6 +518,7 @@ impl LengthDelimitedCodec {
             let mut src = Cursor::new(&mut *src);
 
             // Skip the required bytes
+            // 跳过所需字节
             src.advance(self.builder.length_field_offset);
 
             // match endianness
@@ -519,6 +528,7 @@ impl LengthDelimitedCodec {
                 src.get_uint_le(field_len)
             };
 
+            // 数据太长
             if n > self.builder.max_frame_len as u64 {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -527,9 +537,11 @@ impl LengthDelimitedCodec {
             }
 
             // The check above ensures there is no overflow
+            // 上述检查确保没有溢出
             let n = n as usize;
 
             // Adjust `n` with bounds checking
+            // 调整的头部长度
             let n = if self.builder.length_adjustment < 0 {
                 n.checked_sub(-self.builder.length_adjustment as usize)
             } else {
@@ -574,6 +586,7 @@ impl Decoder for LengthDelimitedCodec {
 
     fn decode(&mut self, src: &mut BytesMut) -> io::Result<Option<BytesMut>> {
         let n = match self.state {
+            // 解码头部数据
             DecodeState::Head => match self.decode_head(src)? {
                 Some(n) => {
                     self.state = DecodeState::Data(n);
@@ -605,6 +618,7 @@ impl Encoder<Bytes> for LengthDelimitedCodec {
     fn encode(&mut self, data: Bytes, dst: &mut BytesMut) -> Result<(), io::Error> {
         let n = data.len();
 
+        // 数据太长
         if n > self.builder.max_frame_len {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,

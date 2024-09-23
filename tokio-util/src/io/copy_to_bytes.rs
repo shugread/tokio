@@ -14,6 +14,7 @@ pin_project! {
     /// [`Bytes`]: bytes::Bytes
     /// [`SinkWriter`]: crate::io::SinkWriter
     /// [`Sink`]: futures_sink::Sink
+    /// 一个辅助程序,它包装 [`Sink`]`<`[`Bytes`]`>` 并通过将每个字节切片复制到所拥有的 [`Bytes`] 中将其转换为[`Sink`]`<&'a [u8]>`.
     #[derive(Debug)]
     pub struct CopyToBytes<S> {
         #[pin]

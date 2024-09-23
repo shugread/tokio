@@ -43,6 +43,7 @@ use crate::loom::sync::{Arc, Mutex, MutexGuard};
 /// A node of the cancellation tree structure
 ///
 /// The actual data it holds is wrapped inside a mutex for synchronization.
+/// 取消树结构的一个节点
 pub(crate) struct TreeNode {
     inner: Mutex<Inner>,
     waker: tokio::sync::Notify,
@@ -71,10 +72,15 @@ impl TreeNode {
 /// This struct exists so that the data of the node can be wrapped
 /// in a Mutex.
 struct Inner {
+    // 父节点
     parent: Option<Arc<TreeNode>>,
+    // 在父节点中的索引
     parent_idx: usize,
+    // 子节点
     children: Vec<Arc<TreeNode>>,
+    // 取消
     is_cancelled: bool,
+    // 句柄
     num_handles: usize,
 }
 
@@ -84,6 +90,7 @@ pub(crate) fn is_cancelled(node: &Arc<TreeNode>) -> bool {
 }
 
 /// Creates a child node
+/// 创建子节点
 pub(crate) fn child_node(parent: &Arc<TreeNode>) -> Arc<TreeNode> {
     let mut locked_parent = parent.inner.lock().unwrap();
 
@@ -122,6 +129,7 @@ pub(crate) fn child_node(parent: &Arc<TreeNode>) -> Arc<TreeNode> {
 /// Disconnects the given parent from all of its children.
 ///
 /// Takes a reference to [Inner] to make sure the parent is already locked.
+/// 断开给定父级与其所有子级的连接.
 fn disconnect_children(node: &mut Inner) {
     for child in std::mem::take(&mut node.children) {
         let mut locked_child = child.inner.lock().unwrap();
@@ -147,6 +155,7 @@ fn disconnect_children(node: &mut Inner) {
 ///
 /// The locked child and optionally its locked parent, if a parent exists, get passed
 /// to the `func` argument via (node, None) or (node, Some(parent)).
+/// 找出节点的父节点并原子地锁定该节点及其父节点.
 fn with_locked_node_and_parent<F, Ret>(node: &Arc<TreeNode>, func: F) -> Ret
 where
     F: FnOnce(MutexGuard<'_, Inner>, Option<MutexGuard<'_, Inner>>) -> Ret,
@@ -159,8 +168,10 @@ where
     // so the loop must succeed after a finite number of iterations.
     loop {
         // Look up the parent of the currently locked node.
+        // 查找当前锁定节点的父节点.
         let potential_parent = match locked_node.parent.as_ref() {
             Some(potential_parent) => potential_parent.clone(),
+            // 没有父节点了
             None => return func(locked_node, None),
         };
 
@@ -168,6 +179,7 @@ where
         let locked_parent = match potential_parent.inner.try_lock() {
             Ok(locked_parent) => locked_parent,
             Err(TryLockError::WouldBlock) => {
+                // 解锁子节点
                 drop(locked_node);
                 // Deadlock safety:
                 //
@@ -175,6 +187,7 @@ where
                 // the child in the creation order. Therefore, we can safely
                 // lock the child while holding the parent lock.
                 let locked_parent = potential_parent.inner.lock().unwrap();
+                // 再次锁定子节点
                 locked_node = node.inner.lock().unwrap();
                 locked_parent
             }
@@ -186,6 +199,7 @@ where
         // If we unlocked the child, then the parent may have changed. Check
         // that we still have the right parent.
         if let Some(actual_parent) = locked_node.parent.as_ref() {
+            // 检查是否仍然拥有正确的父节点.
             if Arc::ptr_eq(actual_parent, &potential_parent) {
                 return func(locked_node, Some(locked_parent));
             }
@@ -199,6 +213,7 @@ where
 /// otherwise there is a potential for a deadlock as invariant #2 would be violated.
 ///
 /// To acquire the locks for node and parent, use [`with_locked_node_and_parent`].
+/// 将所有子项从`节点`移动到`父级`.
 fn move_children_to_parent(node: &mut Inner, parent: &mut Inner) {
     // Pre-allocate in the parent, for performance
     parent.children.reserve(node.children.len());
@@ -217,6 +232,7 @@ fn move_children_to_parent(node: &mut Inner, parent: &mut Inner) {
 ///
 /// `parent` MUST be the parent of `node`.
 /// To acquire the locks for node and parent, use [`with_locked_node_and_parent`].
+/// 从父级中移除子级.
 fn remove_child(parent: &mut Inner, mut node: MutexGuard<'_, Inner>) {
     // Query the position from where to remove a node
     let pos = node.parent_idx;
@@ -229,6 +245,7 @@ fn remove_child(parent: &mut Inner, mut node: MutexGuard<'_, Inner>) {
     drop(node);
 
     // If `node` is the last element in the list, we don't need any swapping
+    // 如果是最后一个节点
     if parent.children.len() == pos + 1 {
         parent.children.pop().unwrap();
     } else {
@@ -246,6 +263,7 @@ fn remove_child(parent: &mut Inner, mut node: MutexGuard<'_, Inner>) {
 }
 
 /// Increases the reference count of handles.
+/// 增加句柄的引用计数.
 pub(crate) fn increase_handle_refcount(node: &Arc<TreeNode>) {
     let mut locked_node = node.inner.lock().unwrap();
 
@@ -260,6 +278,7 @@ pub(crate) fn increase_handle_refcount(node: &Arc<TreeNode>) {
 ///
 /// Once no handle is left, we can remove the node from the
 /// tree and connect its parent directly to its children.
+/// 减少句柄的引用计数.
 pub(crate) fn decrease_handle_refcount(node: &Arc<TreeNode>) {
     let num_handles = {
         let mut locked_node = node.inner.lock().unwrap();
@@ -294,6 +313,7 @@ pub(crate) fn decrease_handle_refcount(node: &Arc<TreeNode>) {
 }
 
 /// Cancels a node and its children.
+/// 取消一个节点及其子节点.
 pub(crate) fn cancel(node: &Arc<TreeNode>) {
     let mut locked_node = node.inner.lock().unwrap();
 
@@ -313,6 +333,7 @@ pub(crate) fn cancel(node: &Arc<TreeNode>) {
         locked_child.parent_idx = 0;
 
         // If child is already cancelled, detaching is enough
+        // 已经取消, 继续下一个
         if locked_child.is_cancelled {
             continue;
         }
@@ -345,6 +366,7 @@ pub(crate) fn cancel(node: &Arc<TreeNode>) {
                 locked_grandchild.parent = Some(node.clone());
                 locked_grandchild.parent_idx = locked_node.children.len();
                 drop(locked_grandchild);
+                // 下层添加到locked_node, 在locked_node中继续循环
                 locked_node.children.push(grandchild);
             }
         }

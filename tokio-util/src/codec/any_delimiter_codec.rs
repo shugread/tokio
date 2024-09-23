@@ -37,6 +37,7 @@ const DEFAULT_SEQUENCE_WRITER: &[u8] = b",";
 /// # }
 /// ```
 ///
+/// 一个简单的 [`Decoder`] 和 [`Encoder`] 实现,根据给定分隔符字符串中的任何字符将数据分成块.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct AnyDelimiterCodec {
     // Stored index of the next index to examine for the delimiter character.
@@ -45,20 +46,25 @@ pub struct AnyDelimiterCodec {
     // because that is the next index to examine.
     // The next time `decode` is called with `abcde}`, the method will
     // only look at `de}` before returning.
+    // 存储下一个要检查分隔符的索引
     next_index: usize,
 
     /// The maximum length for a given chunk. If `usize::MAX`, chunks will be
     /// read until a delimiter character is reached.
+    /// 给定块的最大长度.如果是`usize::MAX`,则将读取块,直到达到分隔符为止.
     max_length: usize,
 
     /// Are we currently discarding the remainder of a chunk which was over
     /// the length limit?
+    /// 我们当前是否要丢弃超出长度限制的块的剩余部分?
     is_discarding: bool,
 
     /// The bytes that are using for search during decode
+    /// 解码过程中用于搜索的字节
     seek_delimiters: Vec<u8>,
 
     /// The bytes that are using for encoding
+    /// 用于编码的字节
     sequence_writer: Vec<u8>,
 }
 
@@ -139,8 +145,10 @@ impl Decoder for AnyDelimiterCodec {
         loop {
             // Determine how far into the buffer we'll search for a delimiter. If
             // there's no max_length set, we'll read to the end of the buffer.
+            // 在缓冲区中搜索多远的分隔符
             let read_to = cmp::min(self.max_length.saturating_add(1), buf.len());
 
+            // 当前缓冲区中寻找分隔符的位置
             let new_chunk_offset = buf[self.next_index..read_to].iter().position(|b| {
                 self.seek_delimiters
                     .iter()
@@ -152,6 +160,7 @@ impl Decoder for AnyDelimiterCodec {
                     // If we found a new chunk, discard up to that offset and
                     // then stop discarding. On the next iteration, we'll try
                     // to read a chunk normally.
+                    // 丢弃数据,恢复正常处理
                     buf.advance(offset + self.next_index + 1);
                     self.is_discarding = false;
                     self.next_index = 0;
@@ -160,6 +169,7 @@ impl Decoder for AnyDelimiterCodec {
                     // Otherwise, we didn't find a new chunk, so we'll discard
                     // everything we read. On the next iteration, we'll continue
                     // discarding up to max_len bytes unless we find a new chunk.
+                    // 没有发现分割符
                     buf.advance(read_to);
                     self.next_index = 0;
                     if buf.is_empty() {
@@ -170,7 +180,9 @@ impl Decoder for AnyDelimiterCodec {
                     // Found a chunk!
                     let new_chunk_index = offset + self.next_index;
                     self.next_index = 0;
+                    // 提取数据
                     let mut chunk = buf.split_to(new_chunk_index + 1);
+                    // 去除分割符
                     chunk.truncate(chunk.len() - 1);
                     let chunk = chunk.freeze();
                     return Ok(Some(chunk));
@@ -179,6 +191,7 @@ impl Decoder for AnyDelimiterCodec {
                     // Reached the maximum length without finding a
                     // new chunk, return an error and start discarding on the
                     // next call.
+                    // 未找到分隔符的情况下缓冲区长度超过 max_length
                     self.is_discarding = true;
                     return Err(AnyDelimiterCodecError::MaxChunkLengthExceeded);
                 }

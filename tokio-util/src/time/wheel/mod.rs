@@ -19,6 +19,7 @@ use std::fmt::Debug;
 /// lookup timer entries.
 ///
 /// See `Timer` documentation for some implementation notes.
+/// 时间轮的实现.
 #[derive(Debug)]
 pub(crate) struct Wheel<T> {
     /// The number of milliseconds elapsed since the wheel started.

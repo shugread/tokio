@@ -59,6 +59,7 @@ use tokio::io::{AsyncBufRead, AsyncRead, AsyncSeek, AsyncWrite, ReadBuf, Result}
 ///     # assert_eq!(value, 10);
 /// }
 /// ```
+/// 将具有相同关联类型的两个不同未来、流或接收器组合成单一类型.
 #[allow(missing_docs)] // Doc-comments for variants in this particular case don't make much sense.
 #[derive(Debug, Clone)]
 pub enum Either<L, R> {

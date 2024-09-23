@@ -126,35 +126,44 @@ use std::task::{self, ready, Poll, Waker};
 /// [`slab`]: slab
 /// [`capacity`]: method@Self::capacity
 /// [`reserve`]: method@Self::reserve
+/// 延迟元素的队列.
 #[derive(Debug)]
 pub struct DelayQueue<T> {
     /// Stores data associated with entries
+    /// 存储元素
     slab: SlabStorage<T>,
 
     /// Lookup structure tracking all delays in the queue
+    /// 时间轮,用于管理元素的延迟时间
     wheel: Wheel<Stack<T>>,
 
     /// Delays that were inserted when already expired. These cannot be stored
     /// in the wheel
+    /// 当插入的元素已经超时,它们不会存储在时间轮中,而是被放在 expired 栈中,供下一次轮询时立即返回.
     expired: Stack<T>,
 
     /// Delay expiring when the *first* item in the queue expires
+    /// 存储下一个到期的定时器
     delay: Option<Pin<Box<Sleep>>>,
 
     /// Wheel polling state
+    /// 当前时间轮中的时间
     wheel_now: u64,
 
     /// Instant at which the timer starts
+    /// 队列启动的时间
     start: Instant,
 
     /// Waker that is invoked when we potentially need to reset the timer.
     /// Because we lazily create the timer when the first entry is created, we
     /// need to awaken any poller that polled us before that point.
+    /// 当时间轮需要重置定时器时,唤醒轮询任务.
     waker: Option<Waker>,
 }
 
 #[derive(Default)]
 struct SlabStorage<T> {
+    // 用于实际存储队列中元素的数据
     inner: Slab<Data<T>>,
 
     // A `compact` call requires a re-mapping of the `Key`s that were changed
@@ -162,13 +171,16 @@ struct SlabStorage<T> {
     // cannot be changed retroactively we need to keep track of these re-mappings.
     // The keys of `key_map` correspond to the old keys that were given out and
     // the values to the `Key`s that were re-mapped by the `compact` call.
+    // 用于映射元素的键值, 如果在调用 compact(用于压缩和优化 Slab 的内存使用)时需要重新映射键,key_map 会记录旧的键和新的键之间的关系.
     key_map: HashMap<Key, KeyInternal>,
 
     // Index used to create new keys to hand out.
+    // 下一个可用的键索引
     next_key_index: usize,
 
     // Whether `compact` has been called, necessary in order to decide whether
     // to include keys in `key_map`.
+    // 用于指示是否调用过 compact
     compact_called: bool,
 }
 
@@ -183,6 +195,7 @@ impl<T> SlabStorage<T> {
     }
 
     // Inserts data into the inner slab and re-maps keys if necessary
+    // 将数据插入内部 slab 并根据需要重新映射键
     pub(crate) fn insert(&mut self, val: Data<T>) -> Key {
         let mut key = KeyInternal::new(self.inner.insert(val));
         let key_contained = self.key_map.contains_key(&key.into());
@@ -194,6 +207,7 @@ impl<T> SlabStorage<T> {
             // If `key` is contained in `self.key_map`, we have encountered this exact situation,
             // We need to create a new key `key_to_give_out` and include the relation
             // `key_to_give_out` -> `key` in `self.key_map`.
+            // 已有键了, 重新创建
             let key_to_give_out = self.create_new_key();
             assert!(!self.key_map.contains_key(&key_to_give_out.into()));
             self.key_map.insert(key_to_give_out.into(), key);
@@ -223,6 +237,7 @@ impl<T> SlabStorage<T> {
     // If we were to imply from this that no re-mapping was necessary, we would
     // incorrectly remove 1 from `self.slab.inner`, which corresponds to the
     // handed-out key 2.
+    // 移除数据
     pub(crate) fn remove(&mut self, key: &Key) -> Data<T> {
         let remapped_key = if self.compact_called {
             match self.key_map.remove(key) {
@@ -241,6 +256,7 @@ impl<T> SlabStorage<T> {
         self.key_map.shrink_to_fit();
     }
 
+    // 重新排列键
     pub(crate) fn compact(&mut self) {
         if !self.compact_called {
             for (key, _) in self.inner.iter() {
@@ -257,6 +273,7 @@ impl<T> SlabStorage<T> {
         // At this point `key_map` contains a mapping for every element.
         for internal_key in self.key_map.values_mut() {
             if let Some(new_internal_key) = remapping.get(&internal_key.index) {
+                // 更新key
                 *internal_key = KeyInternal::new(*new_internal_key);
             }
         }
@@ -371,12 +388,15 @@ impl<T> IndexMut<Key> for SlabStorage<T> {
 #[derive(Debug)]
 pub struct Expired<T> {
     /// The data stored in the queue
+    /// 存储在队列中的数据
     data: T,
 
     /// The expiration time
+    /// 该条目的过期时间
     deadline: Instant,
 
     /// The key associated with the entry
+    /// 该条目关联的键
     key: Key,
 }
 
@@ -387,6 +407,7 @@ pub struct Expired<T> {
 ///
 /// [`DelayQueue`]: struct@DelayQueue
 /// [`DelayQueue::insert`]: method@DelayQueue::insert
+/// 用于唯一标识存储在 DelayQueue 中的元素
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Key {
     index: usize,
@@ -395,6 +416,8 @@ pub struct Key {
 // Whereas `Key` is given out to users that use `DelayQueue`, internally we use
 // `KeyInternal` as the key type in order to make the logic of mapping between keys
 // as a result of `compact` calls clearer.
+// 类似于 Key,但主要用于内部的逻辑处理,
+// 在调用 compact 时(用于压缩内存或重新调整存储),KeyInternal 用于追踪重新映射的键
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct KeyInternal {
     index: usize,
@@ -403,6 +426,7 @@ struct KeyInternal {
 #[derive(Debug)]
 struct Stack<T> {
     /// Head of the stack
+    /// 指向栈顶的键(Key)
     head: Option<Key>,
     _p: PhantomData<fn() -> T>,
 }
@@ -411,18 +435,23 @@ struct Stack<T> {
 struct Data<T> {
     /// The data being stored in the queue and will be returned at the requested
     /// instant.
+    /// 队列中存储的实际数据
     inner: T,
 
     /// The instant at which the item is returned.
+    /// 该条目被返回的时间,通常表示到期时间.
     when: u64,
 
     /// Set to true when stored in the `expired` queue
+    /// 标志该条目是否已过期
     expired: bool,
 
     /// Next entry in the stack
+    /// 链表中下一个条目的键
     next: Option<Key>,
 
     /// Previous entry in the stack
+    /// 链表中上一个条目的键
     prev: Option<Key>,
 }
 
@@ -529,11 +558,13 @@ impl<T> DelayQueue<T> {
     /// [`reset`]: method@Self::reset
     /// [`Key`]: struct@Key
     /// [type]: #
+    /// 插入数据
     #[track_caller]
     pub fn insert_at(&mut self, value: T, when: Instant) -> Key {
         assert!(self.slab.len() < MAX_ENTRIES, "max entries exceeded");
 
         // Normalize the deadline. Values cannot be set to expire in the past.
+        // 规范截止期限.不能将值设置为过去到期.
         let when = self.normalize_deadline(when);
 
         // Insert the value in the store
@@ -545,9 +576,11 @@ impl<T> DelayQueue<T> {
             prev: None,
         });
 
+        // 使用定时器轮注册截止时间
         self.insert_idx(when, key);
 
         // Set a new delay if the current's deadline is later than the one of the new item
+        // 如果当前项目的截止时间晚于新项目的截止时间,则设置新的延迟
         let should_set_delay = if let Some(ref delay) = self.delay {
             let current_exp = self.normalize_deadline(delay.deadline());
             current_exp > when
@@ -560,6 +593,7 @@ impl<T> DelayQueue<T> {
                 waker.wake();
             }
 
+            // 设置新的延时时间
             let delay_time = self.start + Duration::from_millis(when);
             if let Some(ref mut delay) = &mut self.delay {
                 delay.as_mut().reset(delay_time);
@@ -574,6 +608,7 @@ impl<T> DelayQueue<T> {
     /// Attempts to pull out the next value of the delay queue, registering the
     /// current task for wakeup if the value is not yet available, and returning
     /// `None` if the queue is exhausted.
+    /// 尝试轮询延迟队列的下一个值
     pub fn poll_expired(&mut self, cx: &mut task::Context<'_>) -> Poll<Option<Expired<T>>> {
         if !self
             .waker
@@ -658,6 +693,7 @@ impl<T> DelayQueue<T> {
         use self::wheel::{InsertError, Stack};
 
         // Register the deadline with the timer wheel
+        // 使用定时器轮注册截止时间
         match self.wheel.insert(when, key, &mut self.slab) {
             Ok(_) => {}
             Err((_, InsertError::Elapsed)) => {
@@ -848,6 +884,7 @@ impl<T> DelayQueue<T> {
     /// // "foo" is now scheduled to be returned in 10 seconds
     /// # }
     /// ```
+    /// 设置与`key`关联的项目的延迟,使其在`when`到期.
     #[track_caller]
     pub fn reset_at(&mut self, key: &Key, when: Instant) {
         self.remove_key(key);
@@ -1133,31 +1170,39 @@ impl<T> DelayQueue<T> {
     /// should be returned.
     ///
     /// A slot should be returned when the associated deadline has been reached.
+    /// 轮询队列,返回应返回的 slab 中的下一个插槽的索引.
     fn poll_idx(&mut self, cx: &mut task::Context<'_>) -> Poll<Option<Key>> {
         use self::wheel::Stack;
 
+        // 超时队列获取
         let expired = self.expired.pop(&mut self.slab);
 
         if expired.is_some() {
+            // 有超时数据,直接返回
             return Poll::Ready(expired);
         }
 
         loop {
             if let Some(ref mut delay) = self.delay {
                 if !delay.is_elapsed() {
+                    // 没有达到延时
                     ready!(Pin::new(&mut *delay).poll(cx));
                 }
 
                 let now = crate::time::ms(delay.deadline() - self.start, crate::time::Round::Down);
 
+                // 更新时间轮现在时间
                 self.wheel_now = now;
             }
 
             // We poll the wheel to get the next value out before finding the next deadline.
+            // 获取超时的Key
             let wheel_idx = self.wheel.poll(self.wheel_now, &mut self.slab);
 
+            // 设置下一次的延时
             self.delay = self.next_deadline().map(|when| Box::pin(sleep_until(when)));
 
+            // 获取Key
             if let Some(idx) = wheel_idx {
                 return Poll::Ready(Some(idx));
             }

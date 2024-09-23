@@ -35,6 +35,7 @@ pin_project! {
     /// [`Decoder::framed`]: crate::codec::Decoder::framed()
     /// [`futures_util::sink::SinkExt::send`]: futures_util::sink::SinkExt::send
     /// [`tokio_stream::StreamExt::next`]: https://docs.rs/tokio-stream/latest/tokio_stream/trait.StreamExt.html#method.next
+    /// 统一的 [`Stream`] 和 [`Sink`] 接口到底层 I/O 对象,使用 `Encoder` 和 `Decoder` 特征对帧进行编码和解码.
     pub struct Framed<T, U> {
         #[pin]
         inner: FramedImpl<T, U, RWFrames>
@@ -357,6 +358,9 @@ where
 /// It contains all current buffers and the inner transport.
 ///
 /// [`Framed`]: crate::codec::Framed
+/// `FramedParts` 包含 Framed 传输的数据导出.
+/// 它可用于构建具有不同编解码器的新 [`Framed`].
+/// 它包含所有当前缓冲区和内部传输.
 #[derive(Debug)]
 #[allow(clippy::manual_non_exhaustive)]
 pub struct FramedParts<T, U> {

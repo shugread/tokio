@@ -9,6 +9,7 @@ pin_project! {
     /// An adapter that lets you inspect the data that's being read.
     ///
     /// This is useful for things like hashing data as it's read in.
+    /// 一个适配器,可让您检查正在读取的数据.
     pub struct InspectReader<R, F> {
         #[pin]
         reader: R,
@@ -91,6 +92,7 @@ pin_project! {
     /// An adapter that lets you inspect the data that's being written.
     ///
     /// This is useful for things like hashing data as it's written out.
+    /// 一个适配器,可让您检查正在写入的数据.
     pub struct InspectWriter<W, F> {
         #[pin]
         writer: W,

@@ -5,6 +5,7 @@ use std::io;
 /// [`FramedWrite`].
 ///
 /// [`FramedWrite`]: crate::codec::FramedWrite
+/// 辅助对象的特征是将消息写为字节,以便与 [`FramedWrite`] 一起使用.
 pub trait Encoder<Item> {
     /// The type of encoding errors.
     ///

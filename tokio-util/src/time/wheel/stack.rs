@@ -3,6 +3,7 @@ use std::cmp::Eq;
 use std::hash::Hash;
 
 /// Abstracts the stack operations needed to track timeouts.
+/// 抽象跟踪超时所需的堆栈操作.
 pub(crate) trait Stack: Default {
     /// Type of the item stored in the stack
     type Owned: Borrow<Self::Borrowed>;

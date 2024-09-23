@@ -41,6 +41,7 @@ use std::io;
 /// # }
 /// ```
 ///
+/// 一个简单的 [`Decoder`] 和 [`Encoder`] 实现,仅传送字节.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 pub struct BytesCodec(());
 

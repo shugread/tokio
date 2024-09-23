@@ -6,6 +6,7 @@ use tokio::io::{
 
 /// Use a [`tokio::io::AsyncRead`] synchronously as a [`std::io::Read`] or
 /// a [`tokio::io::AsyncWrite`] as a [`std::io::Write`].
+/// 同步使用 [`tokio::io::AsyncRead`] 作为 [`std::io::Read`] 或同步使用 [`tokio::io::AsyncWrite`] 作为 [`std::io::Write`].
 #[derive(Debug)]
 pub struct SyncIoBridge<T> {
     src: T,

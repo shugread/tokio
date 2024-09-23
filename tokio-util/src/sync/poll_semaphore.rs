@@ -10,6 +10,7 @@ use super::ReusableBoxFuture;
 /// A wrapper around [`Semaphore`] that provides a `poll_acquire` method.
 ///
 /// [`Semaphore`]: tokio::sync::Semaphore
+/// 围绕 [`Semaphore`] 的包装器,提供 `poll_acquire` 方法.
 pub struct PollSemaphore {
     semaphore: Arc<Semaphore>,
     permit_fut: Option<(
@@ -72,19 +73,20 @@ impl PollSemaphore {
     /// semaphore is closed. Note that on multiple calls to `poll_acquire`, only
     /// the `Waker` from the `Context` passed to the most recent call is
     /// scheduled to receive a wakeup.
+    /// 轮询从信号量中获取多项许可.
     pub fn poll_acquire_many(
         &mut self,
         cx: &mut Context<'_>,
         permits: u32,
     ) -> Poll<Option<OwnedSemaphorePermit>> {
         let permit_future = match self.permit_fut.as_mut() {
-            Some((prev_permits, fut)) if *prev_permits == permits => fut,
+            Some((prev_permits, fut)) if *prev_permits == permits => fut, // 获取足够的授权
             Some((old_permits, fut_box)) => {
                 // We're requesting a different number of permits, so replace the future
                 // and record the new amount.
                 let fut = Arc::clone(&self.semaphore).acquire_many_owned(permits);
                 fut_box.set(fut);
-                *old_permits = permits;
+                *old_permits = permits; // 更新授权数量
                 fut_box
             }
             None => {
@@ -103,6 +105,7 @@ impl PollSemaphore {
             }
         };
 
+        // 轮询授权
         let result = ready!(permit_future.poll(cx));
 
         // Assume we'll request the same amount of permits in a subsequent call.

@@ -41,6 +41,7 @@ pin_project! {
     /// [`AsyncRead`]: tokio::io::AsyncRead
     /// [`StreamReader`]: crate::io::StreamReader
     /// [`Stream`]: futures_core::Stream
+    /// 将 [`AsyncRead`] 转换为字节块的 [`Stream`].
     #[derive(Debug)]
     pub struct ReaderStream<R> {
         // Reader itself.

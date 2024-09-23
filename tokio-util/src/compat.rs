@@ -8,6 +8,7 @@ use std::task::{ready, Context, Poll};
 pin_project! {
     /// A compatibility layer that allows conversion between the
     /// `tokio::io` and `futures-io` `AsyncRead` and `AsyncWrite` traits.
+    /// 允许`tokio::io`和`futures-io`,`AsyncRead`和`AsyncWrite`特征之间转换的兼容层.
     #[derive(Copy, Clone, Debug)]
     pub struct Compat<T> {
         #[pin]
@@ -18,6 +19,7 @@ pin_project! {
 
 /// Extension trait that allows converting a type implementing
 /// `futures_io::AsyncRead` to implement `tokio::io::AsyncRead`.
+/// 扩展特征允许将实现`futures_io::AsyncRead`的类型转换为实现`tokio::io::AsyncRead`.
 pub trait FuturesAsyncReadCompatExt: futures_io::AsyncRead {
     /// Wraps `self` with a compatibility layer that implements
     /// `tokio_io::AsyncRead`.
@@ -33,6 +35,7 @@ impl<T: futures_io::AsyncRead> FuturesAsyncReadCompatExt for T {}
 
 /// Extension trait that allows converting a type implementing
 /// `futures_io::AsyncWrite` to implement `tokio::io::AsyncWrite`.
+/// 扩展特征允许将实现`futures_io::AsyncWrite`的类型转换为实现`tokio::io::AsyncWrite`.
 pub trait FuturesAsyncWriteCompatExt: futures_io::AsyncWrite {
     /// Wraps `self` with a compatibility layer that implements
     /// `tokio::io::AsyncWrite`.
@@ -48,6 +51,7 @@ impl<T: futures_io::AsyncWrite> FuturesAsyncWriteCompatExt for T {}
 
 /// Extension trait that allows converting a type implementing
 /// `tokio::io::AsyncRead` to implement `futures_io::AsyncRead`.
+/// 扩展特性允许将实现`tokio::io::AsyncRead`的类型转换为实现`futures_io::AsyncRead`.
 pub trait TokioAsyncReadCompatExt: tokio::io::AsyncRead {
     /// Wraps `self` with a compatibility layer that implements
     /// `futures_io::AsyncRead`.
@@ -63,6 +67,7 @@ impl<T: tokio::io::AsyncRead> TokioAsyncReadCompatExt for T {}
 
 /// Extension trait that allows converting a type implementing
 /// `tokio::io::AsyncWrite` to implement `futures_io::AsyncWrite`.
+/// 扩展特性允许将实现`tokio::io::AsyncWrite`的类型转换为实现`futures_io::AsyncWrite`.
 pub trait TokioAsyncWriteCompatExt: tokio::io::AsyncWrite {
     /// Wraps `self` with a compatibility layer that implements
     /// `futures_io::AsyncWrite`.

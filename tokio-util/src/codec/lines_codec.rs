@@ -10,6 +10,7 @@ use std::{cmp, fmt, io, str};
 ///
 /// [`Decoder`]: crate::codec::Decoder
 /// [`Encoder`]: crate::codec::Encoder
+/// 一个简单的 [`Decoder`] 和 [`Encoder`] 实现,将数据分成几行.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct LinesCodec {
     // Stored index of the next index to examine for a `\n` character.
@@ -18,14 +19,17 @@ pub struct LinesCodec {
     // because that is the next index to examine.
     // The next time `decode` is called with `abcde\n`, the method will
     // only look at `de\n` before returning.
+    // 存储下一个要检查 `\n` 字符的索引.
     next_index: usize,
 
     /// The maximum length for a given line. If `usize::MAX`, lines will be
     /// read until a `\n` character is reached.
+    /// 行的最大长度
     max_length: usize,
 
     /// Are we currently discarding the remainder of a line which was over
     /// the length limit?
+    /// 我们当前是否要丢弃超出长度限制的行的剩余部分?
     is_discarding: bool,
 }
 
@@ -115,6 +119,7 @@ impl Decoder for LinesCodec {
             // there's no max_length set, we'll read to the end of the buffer.
             let read_to = cmp::min(self.max_length.saturating_add(1), buf.len());
 
+            // 发现换行
             let newline_offset = buf[self.next_index..read_to]
                 .iter()
                 .position(|b| *b == b'\n');
@@ -124,6 +129,7 @@ impl Decoder for LinesCodec {
                     // If we found a newline, discard up to that offset and
                     // then stop discarding. On the next iteration, we'll try
                     // to read a line normally.
+                    // 丢弃上次未获取到末尾的数据
                     buf.advance(offset + self.next_index + 1);
                     self.is_discarding = false;
                     self.next_index = 0;
@@ -132,6 +138,7 @@ impl Decoder for LinesCodec {
                     // Otherwise, we didn't find a newline, so we'll discard
                     // everything we read. On the next iteration, we'll continue
                     // discarding up to max_len bytes unless we find a newline.
+                    // 未发现新行
                     buf.advance(read_to);
                     self.next_index = 0;
                     if buf.is_empty() {
@@ -140,6 +147,7 @@ impl Decoder for LinesCodec {
                 }
                 (false, Some(offset)) => {
                     // Found a line!
+                    // 发现换行符
                     let newline_index = offset + self.next_index;
                     self.next_index = 0;
                     let line = buf.split_to(newline_index + 1);
@@ -152,12 +160,14 @@ impl Decoder for LinesCodec {
                     // Reached the maximum length without finding a
                     // newline, return an error and start discarding on the
                     // next call.
+                    // 达到最大长度而没有找到换行符,返回错误并在下次调用时开始丢弃.
                     self.is_discarding = true;
                     return Err(LinesCodecError::MaxLineLengthExceeded);
                 }
                 (false, None) => {
                     // We didn't find a line or reach the length limit, so the next
                     // call will resume searching at the current offset.
+                    // 没有找到行或达到长度限制, 因此下一个调用将在当前偏移量处恢复搜索.
                     self.next_index = read_to;
                     return Ok(None);
                 }
@@ -191,6 +201,7 @@ where
     type Error = LinesCodecError;
 
     fn encode(&mut self, line: T, buf: &mut BytesMut) -> Result<(), LinesCodecError> {
+        // 每一条数据后面加上换行
         let line = line.as_ref();
         buf.reserve(line.len() + 1);
         buf.put(line.as_bytes());

@@ -100,6 +100,7 @@ use tokio::task::{AbortHandle, Id, JoinError, JoinSet, LocalSet};
 /// [abort]: fn@Self::abort
 /// [abort_matching]: fn@Self::abort_matching
 /// [contains]: fn@Self::contains_key
+/// Tokio 运行时生成的任务集合,与哈希映射键相关联.
 #[cfg_attr(docsrs, doc(cfg(all(feature = "rt", tokio_unstable))))]
 pub struct JoinMap<K, V, S = RandomState> {
     /// A map of the [`AbortHandle`]s of the tasks spawned on this `JoinMap`,
@@ -109,6 +110,7 @@ pub struct JoinMap<K, V, S = RandomState> {
     /// spawning tasks, and the task's IDs. The IDs are stored here to resolve
     /// hash collisions when looking up tasks based on their pre-computed hash
     /// (as stored in the `hashes_by_task` map).
+    /// 此 `JoinMap` 上生成的任务的 [`AbortHandle`] 映射,通过其键和任务 ID 进行索引.
     tasks_by_key: HashMap<Key<K>, AbortHandle, S>,
 
     /// A map from task IDs to the hash of the key associated with that task.
@@ -118,10 +120,12 @@ pub struct JoinMap<K, V, S = RandomState> {
     /// ID is provided to us by the `JoinSet`, so we can look up the hash value
     /// of that task's key, and then remove it from the `tasks_by_key` map using
     /// the raw hash code, resolving collisions by comparing task IDs.
+    /// 从任务 ID 到与该任务关联的密钥的哈希值的映射.
     hashes_by_task: HashMap<Id, u64, S>,
 
     /// The [`JoinSet`] that awaits the completion of tasks spawned on this
     /// `JoinMap`.
+    /// 等待此`JoinMap`上产生的任务完成的[`JoinSet`].
     tasks: JoinSet<V>,
 }
 
@@ -415,6 +419,7 @@ where
         self.insert(key, task)
     }
 
+    // 插入数据
     fn insert(&mut self, key: K, abort: AbortHandle) {
         let hash = self.hash(&key);
         let id = abort.id();

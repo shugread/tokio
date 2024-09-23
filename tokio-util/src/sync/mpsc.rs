@@ -40,6 +40,7 @@ enum State<T> {
 /// A wrapper around [`mpsc::Sender`] that can be polled.
 ///
 /// [`mpsc::Sender`]: tokio::sync::mpsc::Sender
+/// 可以轮询的 [`mpsc::Sender`] 的包装器.
 #[derive(Debug)]
 pub struct PollSender<T> {
     sender: Option<Sender<T>>,

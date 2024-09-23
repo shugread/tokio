@@ -10,6 +10,7 @@ use std::task::{Context, Poll};
 pub mod unix;
 
 /// A trait for a listener: `TcpListener` and `UnixListener`.
+/// 监听器的特征: `TcpListener`和`UnixListener`.
 pub trait Listener {
     /// The stream's type of this listener.
     type Io: tokio::io::AsyncRead + tokio::io::AsyncWrite;

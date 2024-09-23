@@ -24,16 +24,24 @@ pin_project! {
 
 const INITIAL_CAPACITY: usize = 8 * 1024;
 
+// 存储读取操作的状态信息
 #[derive(Debug)]
 pub(crate) struct ReadFrame {
+    // 是否到达 EOF
     pub(crate) eof: bool,
+    // 是否可读
     pub(crate) is_readable: bool,
+    // 读取buf
     pub(crate) buffer: BytesMut,
+    // 是否有错误
     pub(crate) has_errored: bool,
 }
 
+// 存取写入操作的状态信息
 pub(crate) struct WriteFrame {
+    // 缓存
     pub(crate) buffer: BytesMut,
+    // 背压边界
     pub(crate) backpressure_boundary: usize,
 }
 
@@ -183,12 +191,14 @@ where
                 // pausing or framing
                 if state.eof {
                     // pausing
+                    // 读取到末尾了
                     let frame = pinned.codec.decode_eof(&mut state.buffer).map_err(|err| {
                         trace!("Got an error, going to errored state");
                         state.has_errored = true;
                         err
                     })?;
                     if frame.is_none() {
+                        // 继续读取数据
                         state.is_readable = false; // prepare pausing -> paused
                     }
                     // implicit pausing -> pausing or pausing -> paused
@@ -198,6 +208,7 @@ where
                 // framing
                 trace!("attempting to decode a frame");
 
+                // 解码数据
                 if let Some(frame) = pinned.codec.decode(&mut state.buffer).map_err(|op| {
                     trace!("Got an error, going to errored state");
                     state.has_errored = true;
@@ -205,9 +216,11 @@ where
                 })? {
                     trace!("frame decoded from buffer");
                     // implicit framing -> framing
+                    // 解码成功
                     return Poll::Ready(Some(Ok(frame)));
                 }
 
+                // 解码失败,继续读取数据
                 // framing -> reading
                 state.is_readable = false;
             }
@@ -217,6 +230,7 @@ where
             // that we don't get a spurious 0 that looks like EOF.
             state.buffer.reserve(1);
             #[allow(clippy::blocks_in_conditions)]
+            // 读取数据
             let bytect = match poll_read_buf(pinned.inner.as_mut(), cx, &mut state.buffer).map_err(
                 |err| {
                     trace!("Got an error, going to errored state");
@@ -237,13 +251,16 @@ where
                     return Poll::Ready(None);
                 }
                 // prepare reading -> paused
+                // 设置eof
                 state.eof = true;
             } else {
                 // prepare paused -> framing or noop reading -> framing
+                // 清空false
                 state.eof = false;
             }
 
             // paused -> framing or reading -> framing or reading -> pausing
+            // buffer有数据
             state.is_readable = true;
         }
     }
@@ -267,6 +284,7 @@ where
     }
 
     fn start_send(self: Pin<&mut Self>, item: I) -> Result<(), Self::Error> {
+        // 发送数据到buffer
         let pinned = self.project();
         pinned
             .codec
@@ -280,9 +298,11 @@ where
         let mut pinned = self.project();
 
         while !pinned.state.borrow_mut().buffer.is_empty() {
+            // buffer不为空
             let WriteFrame { buffer, .. } = pinned.state.borrow_mut();
             trace!(remaining = buffer.len(), "writing;");
 
+            // 写入数据
             let n = ready!(poll_write_buf(pinned.inner.as_mut(), cx, buffer))?;
 
             if n == 0 {
@@ -296,6 +316,7 @@ where
         }
 
         // Try flushing the underlying IO
+        // 同步数据
         ready!(pinned.inner.poll_flush(cx))?;
 
         trace!("framed transport flushed");

@@ -66,6 +66,7 @@ pin_project! {
     /// [current thread]: fn@tokio::runtime::Builder::new_current_thread
     /// [enables time]: fn@tokio::runtime::Builder::enable_time
     /// [multi thread]: fn@tokio::runtime::Builder::new_multi_thread
+    /// `TokioContext` 允许在非 Tokio 运行时的 Tokio 上下文中运行Future.
     pub struct TokioContext<F> {
         #[pin]
         inner: F,
@@ -142,6 +143,7 @@ impl<F: Future> Future for TokioContext<F> {
 }
 
 /// Extension trait that simplifies bundling a `Handle` with a `Future`.
+/// 扩展特征简化了`Handle`与`Future`的捆绑.
 pub trait RuntimeExt {
     /// Create a [`TokioContext`] that wraps the provided future and runs it in
     /// this runtime's context.

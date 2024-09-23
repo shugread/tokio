@@ -44,6 +44,7 @@ use std::task::{ready, Context, Poll};
 /// # Ok(())
 /// # }
 /// ```
+/// 尝试将数据从`AsyncRead`读取到[`BufMut`]特征的实现者中.
 #[cfg_attr(not(feature = "io"), allow(unreachable_pub))]
 pub fn poll_read_buf<T: AsyncRead + ?Sized, B: BufMut>(
     io: Pin<&mut T>,
@@ -118,6 +119,7 @@ pub fn poll_read_buf<T: AsyncRead + ?Sized, B: BufMut>(
 /// [`AsyncWrite`]: tokio::io::AsyncWrite
 /// [`File`]: tokio::fs::File
 /// [vectored writes]: tokio::io::AsyncWrite::poll_write_vectored
+/// 尝试将数据从 [`Buf`] 特征的实现者写入 [`AsyncWrite`],推进缓冲区的内部光标.
 #[cfg_attr(not(feature = "io"), allow(unreachable_pub))]
 pub fn poll_write_buf<T: AsyncWrite + ?Sized, B: Buf>(
     io: Pin<&mut T>,

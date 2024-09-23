@@ -60,6 +60,7 @@ pin_project! {
     /// [`Encoder`]: crate::codec::Encoder
     /// [`Sink`]: futures_sink::Sink
     /// [`codec`]: crate::codec
+    /// 将字节块的 [`Sink`] 转换为 [`AsyncWrite`].
     #[derive(Debug)]
     pub struct SinkWriter<S> {
         #[pin]

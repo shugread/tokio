@@ -33,6 +33,7 @@ use std::{io, mem::MaybeUninit};
 /// [`Stream`]: futures_core::Stream
 /// [`Sink`]: futures_sink::Sink
 /// [`split`]: https://docs.rs/futures/0.3/futures/stream/trait.StreamExt.html#method.split
+/// 统一的 [`Stream`] 和 [`Sink`] 接口到底层的 `UdpSocket`,使用 `Encoder` 和 `Decoder` 特征对帧进行编码和解码.
 #[must_use = "sinks do nothing unless polled"]
 #[derive(Debug)]
 pub struct UdpFramed<C, T = UdpSocket> {

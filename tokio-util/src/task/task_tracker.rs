@@ -150,6 +150,7 @@ use tokio::{
 /// [`join_next`]: tokio::task::JoinSet::join_next
 /// [`wait`]: Self::wait
 /// [graceful shutdown]: https://tokio.rs/tokio/topics/shutdown
+/// 用于等待任务退出的任务跟踪器.
 pub struct TaskTracker {
     inner: Arc<TaskTrackerInner>,
 }
@@ -167,8 +168,10 @@ struct TaskTrackerInner {
     /// The lowest bit is whether the task tracker is closed.
     ///
     /// The rest of the bits count the number of tracked tasks.
+    /// 跟踪状态
     state: AtomicUsize,
     /// Used to notify when the last task exits.
+    /// 用于在最后一个任务退出时通知.
     on_last_exit: Notify,
 }
 
@@ -178,6 +181,7 @@ pin_project! {
     /// The associated [`TaskTracker`] cannot complete until this future is dropped.
     ///
     /// This future is returned by [`TaskTracker::track_future`].
+    /// 由 [`TaskTracker`] 作为任务跟踪的Future.
     #[must_use = "futures do nothing unless polled"]
     pub struct TrackedFuture<F> {
         #[pin]
@@ -190,6 +194,7 @@ pin_project! {
     /// A future that completes when the [`TaskTracker`] is empty and closed.
     ///
     /// This future is returned by [`TaskTracker::wait`].
+    /// 当 [`TaskTracker`] 为空并且关闭时完成的未来.
     #[must_use = "futures do nothing unless polled"]
     pub struct TaskTrackerWaitFuture<'a> {
         #[pin]
@@ -517,6 +522,7 @@ impl TaskTracker {
     /// [`Poll::Pending`]: std::task::Poll::Pending
     /// [`poll`]: std::future::Future::poll
     /// [`wait`]: Self::wait
+    /// 跟踪任务
     #[inline]
     pub fn track_future<F: Future>(&self, future: F) -> TrackedFuture<F> {
         TrackedFuture {

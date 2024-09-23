@@ -47,6 +47,7 @@ use tokio::task::{spawn_local, JoinHandle, LocalSet};
 /// }
 /// ```
 ///
+/// 本地池的可克隆句柄,用于生成`!Send`任务.
 #[derive(Clone)]
 pub struct LocalPoolHandle {
     pool: Arc<LocalPool>,
@@ -220,11 +221,13 @@ impl LocalPool {
 
         // Spawn a future onto the worker's runtime so we can immediately return
         // a join handle.
+        // 在工作者的运行时产生一个Future,以便我们可以立即返回一个连接句柄.
         worker.runtime_handle.spawn(async move {
             // Move the job guard into the task
             let _job_guard = job_guard;
 
             // Propagate aborts via Abortable/AbortHandle
+            // 通过 Abortable/AbortHandle 传播中止
             let (abort_handle, abort_registration) = AbortHandle::new_pair();
             let _abort_guard = AbortGuard(abort_handle);
 
@@ -247,6 +250,7 @@ impl LocalPool {
             });
 
             // Send the callback to the LocalSet task
+            // 将回调发送给 LocalSet 任务
             if let Err(e) = worker_spawner.send(spawn_task) {
                 // Propagate the error as a panic in the join handle.
                 panic!("Failed to send job to worker: {}", e);
@@ -265,6 +269,7 @@ impl LocalPool {
             };
 
             // Wait for the task to complete
+            // 等待任务完成
             let join_result = join_handle.await;
 
             match join_result {
@@ -302,6 +307,7 @@ impl LocalPool {
     ///
     /// A job count guard is also returned to ensure the task count gets
     /// decremented when the job is done.
+    /// 找到任务数量最少的 worker.
     fn find_and_incr_least_burdened_worker(&self) -> (&LocalWorkerHandle, JobCountGuard) {
         loop {
             let (worker, task_count) = self
@@ -344,6 +350,7 @@ struct JobCountGuard(Arc<AtomicUsize>);
 impl Drop for JobCountGuard {
     fn drop(&mut self) {
         // Decrement the job count
+        // 减少任务数量
         let previous_value = self.0.fetch_sub(1, Ordering::SeqCst);
         debug_assert!(previous_value >= 1);
     }
@@ -368,6 +375,7 @@ struct LocalWorkerHandle {
 
 impl LocalWorkerHandle {
     /// Create a new worker for executing pinned tasks
+    /// 创建一个新的 worker 来执行固定任务
     fn new_worker() -> LocalWorkerHandle {
         let (sender, receiver) = unbounded_channel();
         let runtime = Builder::new_current_thread()
@@ -378,6 +386,7 @@ impl LocalWorkerHandle {
         let task_count = Arc::new(AtomicUsize::new(0));
         let task_count_clone = Arc::clone(&task_count);
 
+        // 在新线程运行
         std::thread::spawn(|| Self::run(runtime, receiver, task_count_clone));
 
         LocalWorkerHandle {
@@ -394,8 +403,10 @@ impl LocalWorkerHandle {
     ) {
         let local_set = LocalSet::new();
         local_set.block_on(&runtime, async {
+            // 接收任务
             while let Some(spawn_task) = task_receiver.recv().await {
                 // Calls spawn_local(future)
+                // 运行任务
                 (spawn_task)();
             }
         });
@@ -413,9 +424,11 @@ impl LocalWorkerHandle {
         let mut previous_task_count = task_count.load(Ordering::SeqCst);
         loop {
             // This call will also run tasks spawned on the runtime.
+            // 此调用还将运行在运行时生成的任务.
             runtime.block_on(tokio::task::yield_now());
             let new_task_count = task_count.load(Ordering::SeqCst);
             if new_task_count == previous_task_count {
+                // 关闭
                 break;
             } else {
                 previous_task_count = new_task_count;

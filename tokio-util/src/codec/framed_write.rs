@@ -27,6 +27,7 @@ pin_project! {
     /// [`Sink`]: futures_sink::Sink
     /// [`codec`]: crate::codec
     /// [`futures_util::sink::SinkExt::send`]: futures_util::sink::SinkExt::send
+    /// 将帧的 [`Sink`] 编码为 `AsyncWrite`.
     pub struct FramedWrite<T, E> {
         #[pin]
         inner: FramedImpl<T, E, WriteFrame>,

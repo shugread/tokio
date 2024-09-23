@@ -41,6 +41,7 @@ use tokio::io::AsyncRead;
 /// # Ok(())
 /// # }
 /// ```
+///  将数据从`AsyncRead`读取到[`BufMut`]特征的实现者中.
 pub async fn read_buf<R, B>(read: &mut R, buf: &mut B) -> io::Result<usize>
 where
     R: AsyncRead + Unpin,

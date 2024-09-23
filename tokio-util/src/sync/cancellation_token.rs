@@ -52,6 +52,7 @@ use pin_project_lite::pin_project;
 ///     assert_eq!(5, join_handle.await.unwrap());
 /// }
 /// ```
+/// 可用于向一个或多个任务发出取消请求信号的令牌.
 pub struct CancellationToken {
     inner: Arc<tree_node::TreeNode>,
 }
@@ -62,6 +63,7 @@ impl std::panic::RefUnwindSafe for CancellationToken {}
 pin_project! {
     /// A Future that is resolved once the corresponding [`CancellationToken`]
     /// is cancelled.
+    /// 一旦相应的 [`CancellationToken`] 被取消,就会解析一个 Future.
     #[must_use = "futures do nothing unless polled"]
     pub struct WaitForCancellationFuture<'a> {
         cancellation_token: &'a CancellationToken,
@@ -273,6 +275,7 @@ impl CancellationToken {
                 let this = self.project();
                 if let Poll::Ready(res) = this.future.poll(cx) {
                     Poll::Ready(Some(res))
+                    // 等待取消
                 } else if this.cancellation.poll(cx).is_ready() {
                     Poll::Ready(None)
                 } else {
@@ -311,10 +314,12 @@ impl<'a> Future for WaitForCancellationFuture<'a> {
             // `is_cancelled` between the creation of the future and the call to
             // `poll`, and the code that sets the cancelled flag does so before
             // waking the `Notified`.
+            // 等待通知
             if this.future.as_mut().poll(cx).is_pending() {
                 return Poll::Pending;
             }
 
+            // 等待取消通知
             this.future.set(this.cancellation_token.inner.notified());
         }
     }
